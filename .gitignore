@@ -1,0 +1,12 @@
+.DS_Store
+.env
+.env.*
+*.json
+!package.json
+!tsconfig.json
+!.devin/config.json
+node_modules/
+target/
+.anchor/
+test-ledger/
+coverage/
