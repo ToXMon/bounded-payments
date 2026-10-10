@@ -24,7 +24,7 @@ A passkey wallet changes how the owner signs. It does not change the payment rul
 
 ### Stage 1: recurring transfer
 
-An owner creates a payment plan for one recipient. The owner sets the amount, interval, total limit, and expiry. The owner funds the vault. An authorized caller submits a transfer after the interval.
+An owner creates a payment plan for one recipient. The owner sets the amount, the interval, and the number of payments. The program derives the total limit and the expiry. The owner or any other wallet funds the vault with a plain transfer. An authorized caller submits a transfer when one is due.
 
 ### Stage 2: approved purchase
 

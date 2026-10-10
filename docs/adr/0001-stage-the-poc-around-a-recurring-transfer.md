@@ -18,6 +18,7 @@ Keep the agent and passkey wallet outside the Stage 1 program boundary.
 ## Consequences
 
 - The first program needs three handlers: `create_plan`, `deposit`, and `execute_transfer`.
+  Superseded for the handler count by ADR 0002. The staging decision stands.
 - The team can divide program, client, and test work around one stable account model.
 - The first demo can work without an AI agent.
 - The second demo can show an agent-selected purchase without granting the agent vault authority.
