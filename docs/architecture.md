@@ -4,7 +4,7 @@ Capstone Deliverable 2 · Oct 8, 2026 · @walquer xavier valles ruiz
 
 ## 1. Overview
 
-Bounded Payments is a Solana vault that moves funds only when a submitted payment satisfies owner-defined rules. Stage 1 proves this with two Anchor instruction handlers: `create_plan` and `execute_transfer`.
+Bounded Payments is a Solana vault that moves funds only when a submitted payment satisfies owner-defined rules. Stage 1 proves this with one recurring transfer, through two Anchor instruction handlers: `create_plan` and `execute_transfer`.
 
 **Problem.** People want software to make routine payments for them. Manual approval for every payment removes the value of delegation. Full wallet access turns one error or one compromised key into a large loss.
 
@@ -29,12 +29,12 @@ The team made these decisions before writing requirements. Each requirement in S
 | D2 | Anyone can fund the vault with a plain SPL Token transfer. Funding gives no authority. |
 | D3 | The schedule uses Unix time from the Clock sysvar, in seconds, with a fixed `interval`. |
 | D4 | A failed or late payment is a missed payment. After a late success, `next_due_at` becomes the first scheduled time after `now`. Maximum one payment per interval. |
-| D5 | The token is devnet USDC on the classic SPL Token Program. The mint is a program constant. |
+| D5 | The token is devnet USDC on the classic SPL Token Program. The mint is a program constant. The program uses Anchor's `TokenInterface`, which accepts this mint today and leaves the Token-2022 move open without a handler change. |
 | D6 | `create_plan` creates the vault ATA. The owner pays the rent for the plan and the vault. |
 | D7 | `create_plan` rejects every invalid input, because the plan cannot change after creation. |
-| D8 | The plan rules are immutable. |
+| D8 | The payment rules are immutable. |
 | D9 | `first_due_at` is optional. If the owner gives no value, the first payment is due now. |
-| D10 | The owner gives `amount`, `interval`, and `payment_count`. The program computes `total_limit = amount × payment_count` and `expiry = first_due_at + payment_count × interval`. The last payment has one full interval to execute. |
+| D10 | The owner gives `amount`, `interval`, and `payment_count`. The program computes `total_limit = amount × payment_count` and `expiry = next_due_at + payment_count × interval`. `next_due_at` is `first_due_at`, or `now` when the owner gives no value (REQ-10). The last payment has one full interval to execute. |
 | D11 | All arithmetic uses checked math. An overflow fails the transaction. |
 | D12 | Stage 1 has two handlers: `create_plan` and `execute_transfer`. |
 
@@ -44,19 +44,20 @@ Three actors sign. The recipient never signs. No protocol-level administrator ex
 
 | LOI category | Actor | Signs | Can | Cannot |
 | --- | --- | --- | --- | --- |
-| Direct actor | Owner | `create_plan` | Define all plan rules. Choose the authorized caller. | Change a plan after creation (Stage 1). |
+| Direct actor | Owner | `create_plan` | Define all payment rules. Choose the authorized caller. | Change a plan after creation (Stage 1). |
 | Direct actor | Authorized caller (agent key) | `execute_transfer` | Submit a due transfer. Decide when to submit. | Change rules, choose the amount or recipient, withdraw the vault. |
 | Direct actor | Funder (any wallet or exchange) | SPL Token transfer, not a program handler | Add USDC to the vault. | Change rules or gain any authority. |
 | Beneficiary | Recipient | Does not sign | Receive USDC. | Trigger a payment. |
 | Administrator | Owner, for his own plan only | `create_plan` | Set the rules once. | Administer other plans. |
 | Stakeholder | Team | No handler | Holds the program upgrade authority on devnet. | Move plan funds. |
 | Stakeholder | Circle (USDC issuer) | No handler | Freeze any USDC token account, including the vault. | Move plan funds. |
+| Trigger | Agent or scheduler (off-chain event) | Does not sign | Cause the authorized caller to submit an instruction. | Bypass any on-chain check. |
 
 Outside the trust boundary: the agent or scheduler process, the web UI. These systems can submit transactions. They cannot bypass the program checks.
 
 ## 4. Atomic requirements
 
-Stage 1 has 29 requirements: REQ-01 to REQ-19 for `create_plan`, REQ-20 to REQ-29 for `execute_transfer`. Each has one action and one testable condition. One use case = one atomic state transition = one Anchor instruction handler.
+Stage 1 has 30 requirements: REQ-01 to REQ-19 and REQ-30 for `create_plan`, REQ-20 to REQ-29 for `execute_transfer`. Each has one action and one testable condition. One use case = one atomic state transition = one Anchor instruction handler.
 
 ### UC-1 `create_plan` (signer: Owner)
 
@@ -64,14 +65,14 @@ Inputs: `plan_id: u64`, `amount: u64`, `interval: i64`, `payment_count: u64`, `f
 
 | REQ | The program shall | Test |
 | --- | --- | --- |
-| REQ-01 | Create one plan PDA with seeds `["plan", owner, plan_id]`. | Second create with same seeds fails. |
+| REQ-01 | Create one plan PDA with seeds `["plan", owner, plan_id]`. | Read plan. The address derives from those seeds with the canonical bump. |
 | REQ-02 | Store the owner. | Read plan. |
 | REQ-03 | Reject a mint that is not the devnet USDC mint. | Other mint fails. |
 | REQ-04 | Store the recipient token account. | Read plan. |
 | REQ-05 | Store the amount. | Read plan. |
 | REQ-06 | Store the interval in seconds. | Read plan. |
 | REQ-07 | Compute and store `total_limit = amount × payment_count`. | 10 × 3 stores 30. |
-| REQ-08 | Compute and store `expiry = first_due_at + payment_count × interval`. | first due 100, interval 10, count 3 stores 130. |
+| REQ-08 | Compute and store `expiry = next_due_at + payment_count × interval`. | First due 100, interval 10, count 3 stores 130. No first due, now 100, interval 10, count 3 stores 130. |
 | REQ-09 | Store the authorized caller. | Read plan. |
 | REQ-10 | Set `next_due_at` to `first_due_at`, or to `now` when the owner gives no value. | Both cases. |
 | REQ-11 | Set `paid_total` to 0. | Read plan. |
@@ -83,6 +84,9 @@ Inputs: `plan_id: u64`, `amount: u64`, `interval: i64`, `payment_count: u64`, `f
 | REQ-17 | Reject a recipient token account with a mint that is not devnet USDC. | Other mint fails. |
 | REQ-18 | Reject the zero key as authorized caller. | Fails. |
 | REQ-19 | Reject any arithmetic overflow. | Very large count or interval fails. |
+| REQ-30 | Reject `create_plan` when the plan PDA for these seeds already exists. | Second create with the same owner and `plan_id` fails; the first plan is unchanged. |
+
+REQ-30 is numbered last so the `execute_transfer` range keeps its ids. It belongs to `create_plan`.
 
 ### UC-2 `execute_transfer` (signer: Authorized caller)
 
@@ -93,9 +97,9 @@ Inputs: `plan_id: u64`, `amount: u64`, `interval: i64`, `payment_count: u64`, `f
 | REQ-22 | Reject a request when `now > expiry`. | Late call fails. |
 | REQ-23 | Reject a request when `paid_total + amount > total_limit`. | Call after the last payment fails. |
 | REQ-24 | Reject a recipient token account that is not the stored recipient. | Other account fails. |
-| REQ-25 | Transfer the stored amount from the vault to the recipient with `transfer_checked`, signed by the plan PDA. | Balances change by amount. |
+| REQ-25 | Transfer the stored amount from the vault to the recipient with `transfer_checked`, signed by the plan PDA. | Balances change by amount. Vault short of funds fails with the Token Program error. |
 | REQ-26 | Add the amount to `paid_total`. | Read plan. |
-| REQ-27 | Set `next_due_at` to the first scheduled time after `now`. | Due 100, interval 10, now 125 stores 130. |
+| REQ-27 | Set `next_due_at` to the first scheduled time after `now`: `k = (now − next_due_at) / interval + 1`, integer division, then `next_due_at = next_due_at + k × interval`. | Due 100, interval 10, now 125 stores 130. Now 100 exactly stores 110. |
 | REQ-28 | Reject any arithmetic overflow. | Fails. |
 | REQ-29 | Preserve all balances and plan state when any check or transfer fails. | After each failure, balances and plan are unchanged. |
 
@@ -122,39 +126,55 @@ Team note on Rule 1: we chose the simplest split. A more optimal split may exist
 
 ## 6. On-chain requirements matrix
 
-Stage 1 uses one program PDA, three token accounts, two handlers, and four external programs or sysvars.
+Stage 1 uses one program PDA, three token accounts, two handlers, and five external programs or sysvars.
 
 ### Accounts
 
 | Account | Type | Owner | Authority | Seeds or derivation | Fields |
 | --- | --- | --- | --- | --- | --- |
-| Payment Plan | PDA | Bounded Payments | Program | `["plan", owner, plan_id]` | `owner: Pubkey`, `plan_id: u64`, `recipient: Pubkey`, `amount: u64`, `interval: i64`, `total_limit: u64`, `paid_total: u64`, `next_due_at: i64`, `expiry: i64`, `authorized_caller: Pubkey`, `bump: u8` |
+| Payment Plan | PDA | Bounded Payments | Program | `["plan", owner, plan_id]`, canonical bump | `owner: Pubkey`, `plan_id: u64`, `recipient: Pubkey`, `amount: u64`, `interval: i64`, `total_limit: u64`, `paid_total: u64`, `next_due_at: i64`, `expiry: i64`, `authorized_caller: Pubkey`, `bump: u8` |
 | Vault | ATA | Token Program | Payment Plan PDA | ATA of (plan PDA, USDC mint) | USDC balance |
-| Recipient token account | Token account | Token Program | Recipient | Given by the owner | USDC balance |
-| USDC mint | Mint | Token Program | Circle | Program constant | Freeze authority = Circle |
+| Recipient token account | Token account | Token Program | Recipient | Given by the owner, stored, re-checked on every transfer | USDC balance |
+| USDC mint | Mint | Token Program | Circle | Program constant `USDC_DEVNET` = `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` | 6 decimals, freeze authority = Circle |
+
+Anchor `init` derives the canonical bump. `execute_transfer` re-derives the vault ATA from the stored seeds and checks the bump.
+
+The recipient account must be a token account owned by the Token Program, with the pinned mint. Use Anchor's `associated_token` constraint or an explicit owner and mint check.
 
 ### Handlers
 
 | Handler | Signer | CPIs | Account constraints | REQ |
 | --- | --- | --- | --- | --- |
-| `create_plan` | Owner (also pays rent) | System Program (create plan), Associated Token Program (create vault) | `mint == USDC_DEVNET`; `recipient.mint == USDC_DEVNET`; plan `init` with seeds; vault `init` with authority = plan PDA | REQ-01 to REQ-19 |
-| `execute_transfer` | Authorized caller | Token Program `transfer_checked`, plan PDA signs with seeds | `caller == plan.authorized_caller`; `recipient == plan.recipient`; vault == ATA(plan, mint); time, limit, and overflow checks in the handler | REQ-20 to REQ-29 |
+| `create_plan` | Owner (also pays rent) | System Program (create plan), Associated Token Program (create vault) | `mint == USDC_DEVNET`; `recipient.mint == USDC_DEVNET`; plan `init` with seeds; vault `init` with authority = plan PDA; `TokenInterface` for the mint and token accounts | REQ-01 to REQ-19, REQ-30 |
+| `execute_transfer` | Authorized caller | `TokenInterface` `transfer_checked`, plan PDA signs with seeds | `caller == plan.authorized_caller`; `recipient == plan.recipient`; vault == ATA(plan, mint); re-derive and check the bump; time, limit, and overflow checks in the handler | REQ-20 to REQ-29 |
+
+Anchor 0.31, per `AGENTS.md`.
+
+Read `decimals` from the mint at runtime; `transfer_checked` verifies it.
 
 ### External dependencies
 
-| Dependency | Kind | Used by |
-| --- | --- | --- |
-| SPL Token Program (classic) | On-chain program | `execute_transfer`, funding |
-| Associated Token Program | On-chain program | `create_plan` |
-| System Program | On-chain program | `create_plan` |
-| Clock sysvar | Sysvar | Both handlers |
-| Circle (USDC issuer) | Off-chain authority | Can freeze any USDC account |
-| Agent or scheduler | Off-chain process | Submits `execute_transfer` |
-| Web UI | Off-chain client | Builds `create_plan` |
+`AGENTS.md` requires the program to accept only known program IDs for CPI. Each handler compares each incoming program address against this list. It does not trust the account owner field alone.
+
+| Dependency | Kind | Program ID | Used by |
+| --- | --- | --- | --- |
+| SPL Token Program (classic) | On-chain program | `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` | `execute_transfer`, funding |
+| Token-2022 (roadmap only, not called in Stage 1) | On-chain program | `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` | None in Stage 1 |
+| Associated Token Program | On-chain program | `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL` | `create_plan` |
+| System Program | On-chain program | `11111111111111111111111111111111` | `create_plan` |
+| Clock sysvar | Sysvar | `SysvarC1ock11111111111111111111111111111111` | Both handlers |
+| Rent sysvar | Sysvar | `SysvarRent111111111111111111111111111111111` | Both `init` constraints in `create_plan` (D6) |
+| Circle (USDC issuer) | Off-chain authority | None | Can freeze any USDC account |
+| Agent or scheduler | Off-chain process | None | Submits `execute_transfer` |
+| Web UI | Off-chain client | None | Builds `create_plan` |
 
 ## 7. Architecture diagrams
 
-Four diagrams follow the reference structure: an overview, one flow per handler, and an end-to-end view. Every arrow, decision, and step carries its REQ number.
+Four diagrams follow the reference structure: an overview, one flow per handler, and an end-to-end view. Every numbered arrow, decision, and step carries its REQ number. The funding arrow carries none, because funding is not a program use case (D2).
+
+![Bounded Payments architecture overview](architecture-overview.svg)
+
+This is the canonical overview. It is the summary view. REQ traceability is in diagrams D1 to D4 below.
 
 ### Legend
 
@@ -190,21 +210,21 @@ flowchart LR
     RECIP(["Recipient<br/>does not sign"]):::beneficiary
   end
   subgraph PROG["Bounded Payments program"]
-    CP["create_plan<br/>REQ-01 to REQ-19"]:::program
+    CP["create_plan<br/>REQ-01 to REQ-19, REQ-30"]:::program
     EX["execute_transfer<br/>REQ-20 to REQ-29"]:::program
   end
   PLAN[["Payment Plan PDA<br/>seeds: plan, owner, plan_id<br/>owner: Bounded Payments<br/>owner · plan_id · recipient · amount<br/>interval · total_limit · paid_total<br/>next_due_at · expiry · authorized_caller · bump"]]:::pda
   VAULT["Vault ATA<br/>owner: Token Program<br/>authority: Plan PDA<br/>mint: devnet USDC"]:::token
   RTA["Recipient token account<br/>authority: Recipient"]:::token
 
-  OWNER -->|"1 · create_plan"| CP
+  OWNER -->|"1 · create_plan · REQ-01 to REQ-19, REQ-30"| CP
   CP -->|"1a · REQ-01, REQ-02, REQ-04 to REQ-11 · init and store rules"| PLAN
   CP -->|"1b · REQ-12 · init vault, authority = Plan PDA"| VAULT
-  FUNDER -->|"funding · plain SPL transfer, no program call"| VAULT
+  FUNDER -->|"0 · funding · plain SPL transfer · no REQ (D2)"| VAULT
   CALLER -->|"2 · REQ-20 · execute_transfer"| EX
-  EX -->|"2a · REQ-21 to REQ-24 read · REQ-26, REQ-27 write"| PLAN
+  EX -->|"2a · REQ-21 to REQ-24, REQ-30 read · REQ-26, REQ-27 write · REQ-28, REQ-29 on failure"| PLAN
   VAULT -->|"2b · REQ-25 · transfer_checked, Plan PDA signs"| RTA
-  RTA -.->|"belongs to"| RECIP
+  RTA -.->|"REQ-04 · stored recipient"| RECIP
 
   classDef signer fill:#dbeafe,stroke:#1d4ed8,stroke-width:3px,color:#000
   classDef beneficiary fill:#fef9c3,stroke:#a16207,stroke-width:2px,stroke-dasharray:5 5,color:#000
@@ -242,7 +262,7 @@ flowchart TD
   D1 -->|Yes| D2
   D2 -->|"No · REQ-17"| ERR
   D2 -->|Yes| D3
-  D3 -->|"No · REQ-01"| ERR
+  D3 -->|"No · REQ-30"| ERR
   D3 -->|Yes| D4
   D4 -->|"No · REQ-13"| ERR
   D4 -->|Yes| D5
@@ -299,7 +319,7 @@ flowchart TD
   D4 -->|Yes| D5
   D5 -->|"No · REQ-24"| ERR
   D5 -->|Yes| D6
-  D6 -->|"No · Token Program error"| ERR
+  D6 -->|"No · REQ-25 · Token Program error"| ERR
   D6 -->|Yes| D7
   D7 -->|"No · REQ-28"| ERR
   D7 -->|Yes| T
@@ -339,7 +359,7 @@ flowchart LR
   end
 
   OWNER --> UI
-  UI -->|"REQ-01 to REQ-19 · create_plan, owner signs"| BP
+  UI -->|"REQ-01 to REQ-19, REQ-30 · create_plan, owner signs"| BP
   AGENT -->|"REQ-20 to REQ-29 · execute_transfer, caller signs"| BP
   FUNDER -->|"plain SPL transfer, no program call"| TOKEN
   BP -->|"CPI · create plan account · REQ-01"| SYS
@@ -363,11 +383,11 @@ flowchart LR
 
 ## 8. Traceability
 
-Every requirement appears on at least one diagram label, and every diagram label names its requirement. To go from diagram to requirement, read the REQ on the arrow or branch.
+Every requirement appears on at least one diagram label, and every numbered diagram label names its requirement. To go from diagram to requirement, read the REQ on the arrow or branch.
 
 | REQ | Handler | Diagram location |
 | --- | --- | --- |
-| REQ-01 | `create_plan` | D1 arrow 1a; D2 decision "Plan PDA does not exist?" and step "Create Plan PDA"; D4 CPI to System Program |
+| REQ-01 | `create_plan` | D1 arrow 1a; D2 step "Create Plan PDA"; D4 CPI to System Program |
 | REQ-02, REQ-04 to REQ-06, REQ-09 | `create_plan` | D1 arrow 1a; D2 step "Store rules" |
 | REQ-03 | `create_plan` | D2 decision "mint = devnet USDC?" no branch |
 | REQ-07, REQ-08 | `create_plan` | D2 step "Compute total\_limit and expiry" |
@@ -375,9 +395,10 @@ Every requirement appears on at least one diagram label, and every diagram label
 | REQ-12 | `create_plan` | D1 arrow 1b; D2 step "Create Vault ATA"; D4 CPI to Associated Token Program |
 | REQ-13 to REQ-18 | `create_plan` | D2 one decision each, "No" leads to error |
 | REQ-19 | `create_plan` | D2 decision "Checked math OK?" no branch |
+| REQ-30 | `create_plan` | D2 decision "Plan PDA does not exist?" no branch |
 | REQ-20 | `execute_transfer` | D1 arrow 2; D3 decision "signer = authorized\_caller?" no branch |
 | REQ-21 to REQ-24 | `execute_transfer` | D1 arrow 2a (reads); D3 one decision each, "No" leads to error; D4 Clock sysvar |
-| REQ-25 | `execute_transfer` | D1 arrow 2b; D3 step "transfer\_checked"; D4 CPI to Token Program |
+| REQ-25 | `execute_transfer` | D1 arrow 2b; D3 step "transfer\_checked" and decision "vault balance ≥ amount?" no branch; D4 CPI to Token Program |
 | REQ-26, REQ-27 | `execute_transfer` | D1 arrow 2a (writes); D3 steps "paid\_total" and "next\_due\_at" |
 | REQ-28 | `execute_transfer` | D3 decision "Checked math OK?" no branch |
 | REQ-29 | `execute_transfer` | D3 shared error node |
@@ -421,7 +442,7 @@ Earlier AI findings (before this document): automatic does not mean self-executi
 
 ### Milestones
 
-1. Week 1: `create_plan`, all input checks, positive and negative tests for REQ-01 to REQ-19.
+1. Week 1: `create_plan`, all input checks, positive and negative tests for REQ-01 to REQ-19 and REQ-30.
 2. Week 2: `execute_transfer`, all checks, positive and negative tests for REQ-20 to REQ-29.
 3. Stage 2 starts only after every Stage 1 test passes.
 

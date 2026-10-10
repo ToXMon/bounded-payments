@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 860 360" role="img" aria-label="Money path: a funder sends USDC to the vault ATA by plain SPL transfer, the vault's authority is the Plan PDA, the program moves USDC from the vault to the recipient account with transfer_checked, the owner signs create_plan and the authorized caller signs execute_transfer.">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#15803d"/>
+    </marker>
+  </defs>
+
+  <rect x="20" y="16" width="210" height="52" rx="5" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+  <text x="125" y="38" text-anchor="middle" font-family="Georgia,serif" font-size="14">Owner</text>
+  <text x="125" y="56" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="#1e293b">signs create_plan, pays rent</text>
+
+  <rect x="300" y="16" width="220" height="52" rx="5" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+  <text x="410" y="38" text-anchor="middle" font-family="Georgia,serif" font-size="14">Authorized caller</text>
+  <text x="410" y="56" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="#1e293b">signs execute_transfer, an agent key</text>
+
+  <rect x="640" y="16" width="200" height="52" rx="5" fill="#dbeafe" stroke="#1d4ed8" stroke-width="3"/>
+  <text x="740" y="38" text-anchor="middle" font-family="Georgia,serif" font-size="14">Funder: any wallet</text>
+  <text x="740" y="56" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="#1e293b">signs an SPL transfer, not our program</text>
+
+  <rect x="300" y="96" width="220" height="80" rx="5" fill="#ede9fe" stroke="#6d28d9" stroke-width="2"/>
+  <text x="410" y="122" text-anchor="middle" font-family="Georgia,serif" font-size="14">Bounded Payments program</text>
+  <text x="410" y="144" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#1e293b">create_plan</text>
+  <text x="410" y="162" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#1e293b">execute_transfer</text>
+
+  <path d="M125,68 V120 H294" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="210" y="112" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#5b616e">REQ-01 to 19, REQ-30</text>
+  <path d="M410,68 V90" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="418" y="84" font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#5b616e">REQ-20 to 29</text>
+
+  <path d="M740,68 V200 H395 V226" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="405" y="195" font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#5b616e">plain SPL transfer, no program call</text>
+
+  <path d="M340,176 V214 H140 V226" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="240" y="208" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#5b616e">reads rules, writes paid_total and next_due_at</text>
+
+  <rect x="20" y="232" width="240" height="92" rx="5" fill="#dcfce7" stroke="#15803d" stroke-width="2"/>
+  <text x="140" y="252" text-anchor="middle" font-family="Georgia,serif" font-size="14">Payment Plan PDA</text>
+  <text x="140" y="272" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#14532d">seeds: plan, owner, plan_id</text>
+  <text x="140" y="290" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#14532d">owner, recipient, amount, interval,</text>
+  <text x="140" y="303" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#14532d">total_limit, paid_total,</text>
+  <text x="140" y="316" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#14532d">next_due_at, expiry, caller</text>
+
+  <rect x="300" y="232" width="190" height="92" rx="5" fill="#eef1f5" stroke="#475569" stroke-width="2"/>
+  <text x="395" y="252" text-anchor="middle" font-family="Georgia,serif" font-size="14">Vault ATA</text>
+  <text x="395" y="274" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#334155">USDC held between payments</text>
+  <text x="395" y="292" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#334155">no human key can move</text>
+  <text x="395" y="305" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#334155">these tokens</text>
+
+  <rect x="620" y="232" width="220" height="92" rx="5" fill="#eef1f5" stroke="#475569" stroke-width="2"/>
+  <text x="730" y="252" text-anchor="middle" font-family="Georgia,serif" font-size="14">Recipient token account</text>
+  <text x="730" y="274" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#334155">recipient does not sign</text>
+  <text x="730" y="292" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#334155">checked against the account</text>
+  <text x="730" y="305" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#334155">stored in the plan</text>
+
+  <path d="M264,272 H296" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#ag)"/>
+  <text x="280" y="338" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#15803d">authority</text>
+
+  <path d="M494,266 H616" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="555" y="288" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#5b616e">REQ-25</text>
+  <text x="555" y="302" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#5b616e">transfer_checked,</text>
+  <text x="555" y="315" text-anchor="middle" font-family="Georgia,serif" font-size="10.5" fill="#5b616e">Plan PDA signs</text>
+</svg>
