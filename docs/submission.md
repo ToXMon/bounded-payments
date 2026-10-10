@@ -6,10 +6,6 @@ Status: Draft for team review
 Program: Bounded Payments
 Repository: https://github.com/ToXMon/bounded-payments
 
-Drafted by the review lane from `docs/architecture.md` at `fc639fc`, the two scope decisions taken in
-the review session, and the Capstone Architecture Assignment rubric. The team edits this file, not the
-other way round.
-
 ## 1. Problem statement
 
 People want software to make routine payments for them. They do not want to approve every payment by

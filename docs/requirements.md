@@ -56,7 +56,7 @@ Handler: `execute_transfer`. Signer: the stored authorized caller.
 | REQ-24 | Reject a recipient token account that is not the stored recipient. | Other account fails. |
 | REQ-25 | Transfer the stored amount from the vault to the stored recipient with `transfer_checked`, signed by the plan PDA. | Balances change by the amount. Vault short of funds fails with the Token Program error. |
 | REQ-26 | Add the transfer amount to the paid total. | Read plan. |
-| REQ-27 | Set `next_due_at` to the first scheduled time after `now`. | Due 100, interval 10, `now` 125 stores 130. `now` 100 exactly stores 110. |
+| REQ-27 | Set `next_due_at` to the first scheduled time after `now`: `k = (now − next_due_at) / interval + 1`, integer division, then `next_due_at = next_due_at + k × interval`. | Due 100, interval 10, `now` 125 stores 130. `now` 100 exactly stores 110. |
 | REQ-28 | Reject any arithmetic overflow in the update. | Fails on checked math. |
 | REQ-29 | Preserve all balances and plan state when any check or transfer fails. | After each failure above, balances and plan are unchanged. |
 
@@ -89,7 +89,7 @@ No requirement rejects a different owner. The owner is a PDA seed, so a second o
 
 These requirements stay provisional until Stage 1 passes its tests. They are numbered from REQ-40 so
 they cannot collide with the Stage 1 set, which now runs to REQ-30. This matches
-`docs/architecture.md:106`.
+`docs/architecture.md`, section 4.
 
 - **REQ-40:** The owner must sign each change to the approved item list.
 - **REQ-41:** The client must create a canonical hash for each approved purchase intent.
