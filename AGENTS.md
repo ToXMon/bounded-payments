@@ -4,7 +4,7 @@ Read `GLOSSARY.md`, `docs/requirements.md`, and the relevant ADR before you chan
 
 ## Scope
 
-Build Stage 1 before Stage 2. Stage 1 contains `create_plan`, `deposit`, and `execute_transfer`. Do not add roadmap features without an accepted ADR.
+Build Stage 1 before Stage 2. Stage 1 contains `create_plan` and `execute_transfer`. Funding is a plain SPL Token transfer, not a handler. Do not add roadmap features without an accepted ADR.
 
 ## Traceability
 
