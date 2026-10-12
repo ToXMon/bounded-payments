@@ -85,6 +85,20 @@ One per rejection requirement, as `AGENTS.md` requires.
 
 No requirement rejects a different owner. The owner is a PDA seed, so a second owner with the same `plan_id` creates a second plan, and that is correct behavior. The rejection case is the same owner and `plan_id` twice (REQ-30).
 
+## Stage 1 demo UI
+
+These requirements cover the hosted devnet demo, not program behavior.
+
+| REQ | The demo must | Test |
+| --- | --- | --- |
+| REQ-50 | Show the created Payment Plan PDA after plan creation and provide a link to its live details. | Create a plan and navigate from the confirmation to the live details. |
+| REQ-51 | Display the full public address of the default demo wallet and allow users to copy it. | Copy the displayed address and compare it with the demo wallet address. |
+| REQ-52 | Identify whether the demo is read-only or connected and whether the connected wallet is the demo wallet. | Load without a wallet, then connect the demo wallet and a different wallet. |
+| REQ-53 | Let visitors load the published existing Payment Plan from devnet without entering its address. | Load the demo plan and verify its live state. |
+| REQ-54 | Link to Circle's devnet USDC faucet and label it for devnet test funding only. | Follow the link and verify its devnet-only label. |
+| REQ-55 | Omit passkey sign-in and passkey education from the Stage 1 demo. | Inspect the rendered demo without a wallet. |
+| REQ-56 | Render proposed-experiment text at a contrast ratio of at least 4.5:1. | Measure the rendered text and background colors. |
+
 ## Stage 2: approved purchase
 
 These requirements stay provisional until Stage 1 passes its tests. They are numbered from REQ-40 so
