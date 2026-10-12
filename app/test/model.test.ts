@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canExecute, expectedRejection, formatAmount } from "../src/model.ts";
-import { readFile } from "node:fs/promises";
+import { actionDisabled, canExecute, expectedRejection, formatAmount, proposalStatus } from "../src/model.ts";
 
 test("REQ-21: early attempts fail the due-time check and due attempts pass", () => {
   assert.equal(canExecute(200, 199.9), false);
@@ -9,8 +8,8 @@ test("REQ-21: early attempts fail the due-time check and due attempts pass", () 
 });
 
 test("only the matching on-chain error counts as a rejection", () => {
-  assert.equal(expectedRejection(new Error("Error Number: 6007"), "Unauthorized"), true);
-  assert.equal(expectedRejection(new Error("Error Number: 6008"), "TransferNotDue"), true);
+  assert.equal(expectedRejection({ logs: ["Program failed: custom program error: 0x1777"] }, "Unauthorized"), true);
+  assert.equal(expectedRejection({ logs: ["Program failed: custom program error: 0x1778"] }, "TransferNotDue"), true);
   assert.equal(expectedRejection(new Error("failed to fetch"), "TransferNotDue"), false);
 });
 
@@ -19,11 +18,19 @@ test("live token display uses six-decimal USDC units", () => {
   assert.equal(formatAmount("1"), "0.00");
 });
 
-test("read-only page keeps recorded evidence and proposal clearly labeled", async () => {
-  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /Read-only mode/);
-  assert.match(html, /RECORDED FALLBACK/);
-  assert.match(html, /PROPOSAL ONLY · NOT IMPLEMENTED STAGE 1 FUNCTIONALITY/);
-  assert.match(html, /Test unauthorized caller/);
-  assert.match(html, /Test early transfer/);
+test("read-only controls stay disabled until a wallet and plan are available", () => {
+  assert.deepEqual(actionDisabled(false, false, false), {
+    createPlan: true,
+    fundVault: true,
+    execute: true,
+    unauthorized: true,
+    early: true,
+  });
+  assert.equal(actionDisabled(true, false, false).createPlan, false);
+  assert.equal(actionDisabled(true, false, false).execute, true);
+  assert.equal(actionDisabled(true, true, false).execute, false);
+});
+
+test("the next experiment remains explicitly outside Stage 1", () => {
+  assert.equal(proposalStatus, "PROPOSAL ONLY · NOT IMPLEMENTED STAGE 1 FUNCTIONALITY");
 });

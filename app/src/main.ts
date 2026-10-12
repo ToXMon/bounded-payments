@@ -3,7 +3,7 @@ import { AnchorProvider, BN, Program, type Idl } from "@coral-xyz/anchor";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { clusterApiUrl, Connection, PublicKey, Transaction } from "@solana/web3.js";
 import idl from "./bounded_payments.json";
-import { canExecute, expectedRejection, formatAmount } from "./model";
+import { actionDisabled, canExecute, expectedRejection, formatAmount, proposalStatus } from "./model";
 import "./style.css";
 
 const PROGRAM_ID = new PublicKey("Hcgo55q8sQZW1cw6UBBErqZEhCYGjph7PKmK26rvkp2Z");
@@ -49,12 +49,12 @@ const withBusy = async (button: HTMLButtonElement, resultId: string, fn: () => P
   finally { busy = false; updateButtons(); }
 };
 function updateButtons() {
-  const connected = !!wallet?.publicKey;
-  $("create-plan").toggleAttribute("disabled", !connected || busy);
-  $("fund-vault").toggleAttribute("disabled", !connected || !planAddress || busy);
-  $("execute").toggleAttribute("disabled", !connected || !planAddress || busy);
-  $("try-unauthorized").toggleAttribute("disabled", !connected || !planAddress || busy);
-  $("try-early").toggleAttribute("disabled", !connected || !planAddress || busy);
+  const state = actionDisabled(!!wallet?.publicKey, !!planAddress, busy);
+  $("create-plan").toggleAttribute("disabled", state.createPlan);
+  $("fund-vault").toggleAttribute("disabled", state.fundVault);
+  $("execute").toggleAttribute("disabled", state.execute);
+  $("try-unauthorized").toggleAttribute("disabled", state.unauthorized);
+  $("try-early").toggleAttribute("disabled", state.early);
 }
 function renderPlan(plan: any, address: PublicKey) {
   livePlan = plan;
@@ -88,6 +88,12 @@ async function makeTransaction(instructions: Transaction["instructions"]) {
   return sig;
 }
 const link = (sig: string) => `https://explorer.solana.com/tx/${sig}?cluster=devnet`;
+const setTransactionResult = (id: string, prefix: string, sig: string) => {
+  const node = $(id); node.replaceChildren(document.createTextNode(`${prefix} `));
+  const anchor = document.createElement("a");
+  anchor.href = link(sig); anchor.target = "_blank"; anchor.rel = "noreferrer"; anchor.textContent = "View transaction ↗";
+  node.append(anchor); node.className = "result ok";
+};
 
 $("connect").addEventListener("click", async () => {
   const button = $("connect") as HTMLButtonElement;
@@ -121,14 +127,14 @@ $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HT
     .accounts({ owner: wallet.publicKey, plan: planAddress, mint: MINT, recipient: recipientAddress, vault: vaultAddress, tokenProgram: TOKEN_PROGRAM_ID }).instruction();
   const ata = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, recipientAddress, recipientOwner, MINT);
   const sig = await makeTransaction([ata, ix]);
-  setResult("create-result", `Plan created · ${link(sig)}`, "ok"); await refreshPlan();
+  setTransactionResult("create-result", "Plan created ·", sig); await refreshPlan();
 }));
 
 $("fund-vault").addEventListener("click", () => withBusy($("fund-vault") as HTMLButtonElement, "fund-result", async () => {
   if (!wallet?.publicKey || !vaultAddress) throw new Error("Create or inspect a plan first.");
   const source = getAssociatedTokenAddressSync(MINT, wallet.publicKey);
   const sig = await makeTransaction([createTransferCheckedInstruction(source, MINT, vaultAddress, wallet.publicKey, 3_000_000n, 6)]);
-  setResult("fund-result", `USDC sent to vault · ${link(sig)}`, "ok"); await refreshBalances();
+  setTransactionResult("fund-result", "USDC sent to vault ·", sig); await refreshBalances();
 }));
 
 async function execute() {
@@ -137,7 +143,7 @@ async function execute() {
   const sig = await makeTransaction([ix]); return sig;
 }
 $("execute").addEventListener("click", () => withBusy($("execute") as HTMLButtonElement, "execute-result", async () => {
-  const sig = await execute(); setResult("execute-result", `Transfer finalized · ${link(sig)}`, "ok"); await refreshPlan();
+  const sig = await execute(); setTransactionResult("execute-result", "Transfer finalized ·", sig); await refreshPlan();
 }));
 $("try-unauthorized").addEventListener("click", () => withBusy($("try-unauthorized") as HTMLButtonElement, "unauthorized-result", async () => {
   if (!livePlan) await refreshPlan();
@@ -171,5 +177,6 @@ $("inspect").addEventListener("click", async () => {
   } catch (error) { setResult("inspect-result", `Live read failed · ${displayError(error)}`, "error"); }
 });
 
+text("proposal-status", proposalStatus);
 text("rpc-state", "Public Solana devnet RPC · read-only until wallet connects");
 updateButtons();
