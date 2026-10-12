@@ -22,6 +22,7 @@ let recipientAddress: PublicKey | undefined;
 let livePlan: any;
 let planReadOnly = false;
 let planRequest = 0;
+let planLoading = false;
 let busy = false;
 
 interface PhantomProvider {
@@ -65,7 +66,7 @@ const withBusy = async (button: HTMLButtonElement, resultId: string, fn: () => P
   finally { busy = false; updateButtons(); }
 };
 function updateButtons() {
-  const state = actionDisabled(!!wallet?.publicKey, !!planAddress, busy, planReadOnly);
+  const state = actionDisabled(!!wallet?.publicKey, !!planAddress, busy || planLoading, planReadOnly);
   $("create-plan").toggleAttribute("disabled", state.createPlan);
   $("fund-vault").toggleAttribute("disabled", state.fundVault);
   $("execute").toggleAttribute("disabled", state.execute);
@@ -98,7 +99,6 @@ async function refreshBalances(request = planRequest) {
   }
 }
 function clearPlan() {
-  planRequest += 1;
   planAddress = undefined;
   vaultAddress = undefined;
   recipientAddress = undefined;
@@ -167,6 +167,7 @@ window.solana?.on("accountChanged", (key) => {
 });
 
 $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HTMLButtonElement, "create-result", async () => {
+  if (planLoading) throw new Error("Wait for plan inspection to finish.");
   if (!wallet?.publicKey) throw new Error("Connect Phantom first.");
   const id = inputs.id.value.trim();
   if (!/^\d+$/.test(id) || BigInt(id) < 1n || BigInt(id) > (1n << 64n) - 1n) throw new Error("Plan ID must be a positive u64.");
@@ -190,6 +191,7 @@ $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HT
 }));
 
 $("fund-vault").addEventListener("click", () => withBusy($("fund-vault") as HTMLButtonElement, "fund-result", async () => {
+  if (planLoading) throw new Error("Wait for plan inspection to finish.");
   if (!wallet?.publicKey || !vaultAddress) throw new Error("Create or inspect a plan first.");
   if (planReadOnly) throw new Error("The published demo plan is read-only.");
   const source = getAssociatedTokenAddressSync(MINT, wallet.publicKey);
@@ -198,6 +200,7 @@ $("fund-vault").addEventListener("click", () => withBusy($("fund-vault") as HTML
 }));
 
 async function execute() {
+  if (planLoading) throw new Error("Wait for plan inspection to finish.");
   if (planReadOnly) throw new Error("The published demo plan is read-only.");
   if (!wallet?.publicKey || !planAddress || !livePlan) throw new Error("Load a live plan before submitting.");
   const ix = await getProgram().methods.executeTransfer().accounts({ authorizedCaller: wallet.publicKey, plan: planAddress, mint: MINT, vault: vaultAddress!, recipient: livePlan.recipient, tokenProgram: TOKEN_PROGRAM_ID }).instruction();
@@ -227,7 +230,9 @@ $("try-early").addEventListener("click", () => withBusy($("try-early") as HTMLBu
 }));
 
 async function inspectPlan(value: string, resultId = "inspect-result") {
+  planLoading = true;
   const request = ++planRequest;
+  clearPlan();
   try {
     const address = new PublicKey(value.trim());
     const plan = await (getProgram().account as any).paymentPlan.fetch(address);
@@ -240,6 +245,11 @@ async function inspectPlan(value: string, resultId = "inspect-result") {
     if (request !== planRequest) return;
     clearPlan();
     setResult(resultId, `Live read failed · ${displayError(error)}`, "error");
+  } finally {
+    if (request === planRequest) {
+      planLoading = false;
+      updateButtons();
+    }
   }
 }
 $("inspect").addEventListener("click", () => inspectPlan(($("inspect-address") as HTMLInputElement).value));
