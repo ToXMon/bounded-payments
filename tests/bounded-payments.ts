@@ -26,13 +26,16 @@ describe("bounded-payments: Stage 1", () => {
     throw new Error("expected transaction to fail");
   }
 
-  async function waitForTokenAccount(address: PublicKey) {
+  async function waitForTokenAccount(address: PublicKey, expectedAmount?: bigint) {
     for (let attempt = 0; ; attempt++) {
-      try { return await getAccount(provider.connection, address); }
-      catch (error) {
+      try {
+        const account = await getAccount(provider.connection, address);
+        if (expectedAmount === undefined || account.amount === expectedAmount) return account;
+      } catch (error) {
         if (attempt === 9) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
+      if (attempt === 9) throw new Error(`token account ${address.toBase58()} did not reach expected balance`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
@@ -44,6 +47,15 @@ describe("bounded-payments: Stage 1", () => {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
+  }
+
+  async function waitForPaidTotal(id: number, expected: number) {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const plan = await fetchPlan(id);
+      if (plan.paidTotal.toNumber() === expected) return plan;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error(`plan ${id} did not reach paid_total ${expected}`);
   }
 
   async function create(overrides: Record<string, unknown> = {}, id = nextId++) {
@@ -71,9 +83,10 @@ describe("bounded-payments: Stage 1", () => {
     await waitForTokenAccount(recipient);
   });
 
-  it("REQ-01..12 and REQ-25..27: creates a plan and, when funded, executes a transfer", async function () {
+  it("REQ-01..12 and REQ-25..27: funds the vault and executes a transfer", async () => {
     const id = nextId++;
-    await create({}, id);
+    const createSignature = await create({}, id);
+    console.log(`create_plan signature: ${createSignature}`);
     const plan = await fetchPlan(id);
     expect(plan.owner.equals(owner.publicKey)).to.equal(true);
     expect(plan.planId.toNumber()).to.equal(id);
@@ -91,20 +104,23 @@ describe("bounded-payments: Stage 1", () => {
     const vault = await getAccount(provider.connection, vaultAddress);
     expect(vault.owner.equals(planAddress(id))).to.equal(true);
     const source = getAssociatedTokenAddressSync(USDC, owner.publicKey);
-    let sourceBefore;
-    try { sourceBefore = await getAccount(provider.connection, source); }
-    catch { this.skip(); return; } // Devnet has no test USDC in the configured payer wallet.
-    await provider.sendAndConfirm(new anchor.web3.Transaction().add(
+    const sourceBefore = await getAccount(provider.connection, source);
+    const fundingSignature = await provider.sendAndConfirm(new anchor.web3.Transaction().add(
       createTransferCheckedInstruction(source, USDC, vaultAddress, owner.publicKey, 10n, 6, [], TOKEN_PROGRAM_ID),
     ));
+    console.log(`vault funding signature: ${fundingSignature}`);
+    const fundedVault = await waitForTokenAccount(vaultAddress, 10n);
+    expect(fundedVault.amount).to.equal(10n);
     const recipientBefore = await getAccount(provider.connection, recipient);
-    await program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey, plan: planAddress(id), mint: USDC,
+    const transferSignature = await program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey, plan: planAddress(id), mint: USDC,
       vault: vaultAddress, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc();
-    const recipientAfter = await getAccount(provider.connection, recipient);
-    const vaultAfter = await getAccount(provider.connection, vaultAddress);
-    const paid = await fetchPlan(id);
+    console.log(`execute_transfer signature: ${transferSignature}`);
+    const recipientAfter = await waitForTokenAccount(recipient, recipientBefore.amount + 10n);
+    const vaultAfter = await waitForTokenAccount(vaultAddress, 0n);
+    const sourceAfter = await waitForTokenAccount(source, sourceBefore.amount - 10n);
+    const paid = await waitForPaidTotal(id, 10);
     expect(recipientAfter.amount - recipientBefore.amount).to.equal(10n); // REQ-25
-    expect(sourceBefore.amount - (await getAccount(provider.connection, source)).amount).to.equal(10n); // plain SPL funding
+    expect(sourceBefore.amount - sourceAfter.amount).to.equal(10n); // plain SPL funding
     expect(vaultAfter.amount).to.equal(0n);
     expect(paid.paidTotal.toNumber()).to.equal(10); // REQ-26
     expect(paid.nextDueAt.gt(plan.nextDueAt)).to.equal(true); // REQ-27
