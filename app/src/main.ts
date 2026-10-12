@@ -3,7 +3,7 @@ import { AnchorProvider, BN, Program, type Idl } from "@coral-xyz/anchor";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { clusterApiUrl, Connection, PublicKey, Transaction } from "@solana/web3.js";
 import idl from "./bounded_payments.json";
-import { actionDisabled, canExecute, expectedRejection, formatAmount, proposalStatus, walletDescription } from "./model";
+import { actionDisabled, canExecute, expectedRejection, formatAmount, formatTimestamp, proposalStatus, walletDescription } from "./model";
 import "./style.css";
 
 const PROGRAM_ID = new PublicKey("Hcgo55q8sQZW1cw6UBBErqZEhCYGjph7PKmK26rvkp2Z");
@@ -20,6 +20,8 @@ let planAddress: PublicKey | undefined;
 let vaultAddress: PublicKey | undefined;
 let recipientAddress: PublicKey | undefined;
 let livePlan: any;
+let planReadOnly = false;
+let planRequest = 0;
 let busy = false;
 
 interface PhantomProvider {
@@ -63,7 +65,7 @@ const withBusy = async (button: HTMLButtonElement, resultId: string, fn: () => P
   finally { busy = false; updateButtons(); }
 };
 function updateButtons() {
-  const state = actionDisabled(!!wallet?.publicKey, !!planAddress, busy);
+  const state = actionDisabled(!!wallet?.publicKey, !!planAddress, busy, planReadOnly);
   $("create-plan").toggleAttribute("disabled", state.createPlan);
   $("fund-vault").toggleAttribute("disabled", state.fundVault);
   $("execute").toggleAttribute("disabled", state.execute);
@@ -73,25 +75,35 @@ function updateButtons() {
 function renderPlan(plan: any, address: PublicKey) {
   livePlan = plan;
   text("plan-state", `Live account · ${address.toBase58()}`);
-  const fields: [string, string][] = [["Owner", plan.owner.toBase58()], ["Plan ID", plan.planId.toString()], ["Recipient account", plan.recipient.toBase58()], ["Authorized caller", plan.authorizedCaller.toBase58()], ["Payment", `${formatAmount(plan.amount.toString())} USDC`], ["Paid total", `${formatAmount(plan.paidTotal.toString())} USDC`], ["Total limit", `${formatAmount(plan.totalLimit.toString())} USDC`], ["Next due", new Date(plan.nextDueAt.toNumber() * 1000).toLocaleString()], ["Expiry", new Date(plan.expiry.toNumber() * 1000).toLocaleString()]];
+  const fields: [string, string][] = [["Owner", plan.owner.toBase58()], ["Plan ID", plan.planId.toString()], ["Recipient account", plan.recipient.toBase58()], ["Authorized caller", plan.authorizedCaller.toBase58()], ["Payment", `${formatAmount(plan.amount.toString())} USDC`], ["Paid total", `${formatAmount(plan.paidTotal.toString())} USDC`], ["Total limit", `${formatAmount(plan.totalLimit.toString())} USDC`], ["Next due", formatTimestamp(plan.nextDueAt.toString())], ["Expiry", formatTimestamp(plan.expiry.toString())]];
   const list = $("plan-fields"); list.replaceChildren(...fields.map(([key, val]) => {
     const row = document.createElement("div"); const term = document.createElement("dt"); const value = document.createElement("dd");
     term.textContent = key; value.textContent = val; row.append(term, value); return row;
   }));
 }
-async function refreshBalances() {
-  if (!planAddress || !vaultAddress || !recipientAddress) return;
+async function refreshBalances(request = planRequest) {
+  const address = planAddress;
+  const vaultAddressSnapshot = vaultAddress;
+  const recipientAddressSnapshot = recipientAddress;
+  if (!address || !vaultAddressSnapshot || !recipientAddressSnapshot) return;
   try {
-    const [vault, recipient] = await Promise.all([getAccount(connection, vaultAddress), getAccount(connection, recipientAddress)]);
+    const [vault, recipient] = await Promise.all([getAccount(connection, vaultAddressSnapshot), getAccount(connection, recipientAddressSnapshot)]);
+    if (request !== planRequest || planAddress !== address) return;
     text("vault-balance", `${formatAmount(vault.amount.toString())} USDC`);
     text("recipient-balance", `${formatAmount(recipient.amount.toString())} USDC`);
-  } catch { text("vault-balance", "Account not found"); }
+  } catch {
+    if (request !== planRequest || planAddress !== address) return;
+    text("vault-balance", "Account not found");
+    text("recipient-balance", "Account not found");
+  }
 }
 function clearPlan() {
+  planRequest += 1;
   planAddress = undefined;
   vaultAddress = undefined;
   recipientAddress = undefined;
   livePlan = undefined;
+  planReadOnly = false;
   $("plan-fields").replaceChildren();
   text("vault-balance", "— USDC");
   text("recipient-balance", "— USDC");
@@ -101,15 +113,19 @@ function commitPlan(plan: any, address: PublicKey) {
   planAddress = address;
   vaultAddress = getAssociatedTokenAddressSync(MINT, address, true);
   recipientAddress = plan.recipient;
+  planReadOnly = address.toBase58() === DEMO_PLAN;
   renderPlan(plan, address);
 }
 async function refreshPlan() {
   if (!planAddress) return;
   const address = planAddress;
+  const request = ++planRequest;
   try {
     const plan = await (getProgram().account as any).paymentPlan.fetch(address);
-    commitPlan(plan, address); await refreshBalances();
+    if (request !== planRequest) return;
+    commitPlan(plan, address); await refreshBalances(request);
   } catch (error) {
+    if (request !== planRequest) return;
     clearPlan();
     text("plan-state", `No live plan at ${address.toBase58()} · ${displayError(error)}`);
   }
@@ -165,7 +181,8 @@ $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HT
     .accounts({ owner: wallet.publicKey, plan: address, mint: MINT, recipient, vault, tokenProgram: TOKEN_PROGRAM_ID }).instruction();
   const ata = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, recipient, recipientOwner, MINT);
   const sig = await makeTransaction([ata, ix]);
-  planAddress = address; vaultAddress = vault; recipientAddress = recipient; livePlan = undefined; updateButtons();
+  planRequest += 1;
+  planAddress = address; vaultAddress = vault; recipientAddress = recipient; livePlan = undefined; planReadOnly = address.toBase58() === DEMO_PLAN; updateButtons();
   setTransactionResult("create-result", "Plan created ·", sig);
   text("created-plan-address", address.toBase58()); $("created-plan").removeAttribute("hidden");
   await refreshPlan();
@@ -173,12 +190,14 @@ $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HT
 
 $("fund-vault").addEventListener("click", () => withBusy($("fund-vault") as HTMLButtonElement, "fund-result", async () => {
   if (!wallet?.publicKey || !vaultAddress) throw new Error("Create or inspect a plan first.");
+  if (planReadOnly) throw new Error("The published demo plan is read-only.");
   const source = getAssociatedTokenAddressSync(MINT, wallet.publicKey);
   const sig = await makeTransaction([createTransferCheckedInstruction(source, MINT, vaultAddress, wallet.publicKey, 3_000_000n, 6)]);
   setTransactionResult("fund-result", "USDC sent to vault ·", sig); await refreshBalances();
 }));
 
 async function execute() {
+  if (planReadOnly) throw new Error("The published demo plan is read-only.");
   if (!wallet?.publicKey || !planAddress || !livePlan) throw new Error("Load a live plan before submitting.");
   const ix = await getProgram().methods.executeTransfer().accounts({ authorizedCaller: wallet.publicKey, plan: planAddress, mint: MINT, vault: vaultAddress!, recipient: livePlan.recipient, tokenProgram: TOKEN_PROGRAM_ID }).instruction();
   const sig = await makeTransaction([ix]); return sig;
@@ -198,7 +217,7 @@ $("try-unauthorized").addEventListener("click", () => withBusy($("try-unauthoriz
 $("try-early").addEventListener("click", () => withBusy($("try-early") as HTMLButtonElement, "early-result", async () => {
   if (!livePlan) await refreshPlan();
   if (!livePlan) throw new Error("Load a live plan first.");
-  if (canExecute(livePlan.nextDueAt.toNumber(), Date.now() / 1000)) throw new Error("This plan is already due. Create another plan with a future due time to test REQ-21.");
+  if (canExecute(livePlan.nextDueAt.toString(), Date.now() / 1000)) throw new Error("This plan is already due. Create another plan with a future due time to test REQ-21.");
   try { await execute(); setResult("early-result", "Unexpected success: verify the deployed program and plan.", "error"); }
   catch (error) {
     if (!expectedRejection(error, "TransferNotDue")) throw error;
@@ -207,13 +226,17 @@ $("try-early").addEventListener("click", () => withBusy($("try-early") as HTMLBu
 }));
 
 async function inspectPlan(value: string, resultId = "inspect-result") {
+  const request = ++planRequest;
   try {
     const address = new PublicKey(value.trim());
     const plan = await (getProgram().account as any).paymentPlan.fetch(address);
-    commitPlan(plan, address); await refreshBalances();
+    if (request !== planRequest) return;
+    commitPlan(plan, address); await refreshBalances(request);
+    if (request !== planRequest) return;
     setResult(resultId, "Live plan state loaded from devnet.", "ok"); updateButtons();
     $("live-plan").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
+    if (request !== planRequest) return;
     clearPlan();
     setResult(resultId, `Live read failed · ${displayError(error)}`, "error");
   }

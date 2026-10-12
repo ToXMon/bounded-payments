@@ -7,21 +7,29 @@ export function walletDescription(connectedAddress: string | null, demoAddress: 
     : "CONNECTED · this wallet is not the default demo wallet.";
 }
 
-export function canExecute(nextDueAt: number, now: number): boolean {
-  return now >= nextDueAt;
+export function canExecute(nextDueAt: string, now: number): boolean {
+  return BigInt(Math.floor(now)) >= BigInt(nextDueAt);
 }
 
 export function formatAmount(raw: string): string {
-  return (Number(raw) / 1_000_000).toFixed(2);
+  const cents = (BigInt(raw) + 5_000n) / 10_000n;
+  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
 }
 
-export function actionDisabled(connected: boolean, hasPlan: boolean, busy: boolean) {
+export function formatTimestamp(raw: string): string {
+  const milliseconds = BigInt(raw) * 1_000n;
+  const maximum = 8_640_000_000_000_000n;
+  if (milliseconds < -maximum || milliseconds > maximum) return `${raw} seconds`;
+  return new Date(Number(milliseconds)).toLocaleString();
+}
+
+export function actionDisabled(connected: boolean, hasPlan: boolean, busy: boolean, readOnly = false) {
   return {
     createPlan: !connected || busy,
-    fundVault: !connected || !hasPlan || busy,
-    execute: !connected || !hasPlan || busy,
-    unauthorized: !connected || !hasPlan || busy,
-    early: !connected || !hasPlan || busy,
+    fundVault: !connected || !hasPlan || busy || readOnly,
+    execute: !connected || !hasPlan || busy || readOnly,
+    unauthorized: !connected || !hasPlan || busy || readOnly,
+    early: !connected || !hasPlan || busy || readOnly,
   };
 }
 
