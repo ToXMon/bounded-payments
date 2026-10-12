@@ -45,6 +45,14 @@ const setResult = (id: string, message: string, state: "ok" | "error" | "info" =
   const node = $(id); node.textContent = message; node.className = `result ${state}`;
 };
 const updateWalletNote = () => text("wallet-note", walletDescription(wallet?.publicKey?.toBase58() ?? null, DEMO_WALLET));
+function updateWalletUi() {
+  const key = wallet?.publicKey;
+  const button = $("connect") as HTMLButtonElement;
+  button.disabled = !!key;
+  button.textContent = key ? `Connected · ${key.toBase58().slice(0, 4)}…${key.toBase58().slice(-4)}` : "Connect Phantom";
+  updateWalletNote();
+  updateButtons();
+}
 async function copyAddress(value: string, resultId: string) {
   try { await navigator.clipboard.writeText(value); setResult(resultId, "Address copied.", "ok"); }
   catch { setResult(resultId, "Clipboard unavailable. Select and copy the address above.", "error"); }
@@ -91,7 +99,8 @@ async function makeTransaction(instructions: Transaction["instructions"]) {
   tx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
   const signed = await wallet!.signTransaction(tx);
   const sig = await connection.sendRawTransaction(signed.serialize());
-  await connection.confirmTransaction(sig, "confirmed");
+  const confirmation = await connection.confirmTransaction(sig, "confirmed");
+  if (confirmation.value.err) throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
   return sig;
 }
 const link = (sig: string) => `https://explorer.solana.com/tx/${sig}?cluster=devnet`;
@@ -103,7 +112,6 @@ const setTransactionResult = (id: string, prefix: string, sig: string) => {
 };
 
 $("connect").addEventListener("click", async () => {
-  const button = $("connect") as HTMLButtonElement;
   try {
     const phantom = window.solana;
     if (!phantom?.isPhantom) throw new Error("Phantom was not found. You can continue in read-only mode.");
@@ -111,17 +119,13 @@ $("connect").addEventListener("click", async () => {
     inputs.caller.value ||= publicKey.toBase58();
     inputs.recipient.value ||= publicKey.toBase58();
     program = new Program(idl as Idl, provider());
-    button.textContent = `${publicKey.toBase58().slice(0, 4)}…${publicKey.toBase58().slice(-4)}`;
-    button.disabled = true;
-    updateWalletNote();
-    text("rpc-state", "Public Solana devnet RPC · live reads"); updateButtons();
+    updateWalletUi();
+    text("rpc-state", "Public Solana devnet RPC · live reads");
   } catch (error) { setResult("create-result", displayError(error), "error"); }
 });
 window.solana?.on("accountChanged", (key) => {
   wallet = key && window.solana ? window.solana : undefined; program = undefined;
-  const button = $("connect") as HTMLButtonElement; button.disabled = !!key;
-  button.textContent = key ? `Connected · ${key.toBase58().slice(0, 4)}…${key.toBase58().slice(-4)}` : "Connect Phantom";
-  updateWalletNote(); updateButtons();
+  updateWalletUi();
 });
 
 $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HTMLButtonElement, "create-result", async () => {
@@ -157,7 +161,7 @@ async function execute() {
   const sig = await makeTransaction([ix]); return sig;
 }
 $("execute").addEventListener("click", () => withBusy($("execute") as HTMLButtonElement, "execute-result", async () => {
-  const sig = await execute(); setTransactionResult("execute-result", "Transfer finalized ·", sig); await refreshPlan();
+  const sig = await execute(); setTransactionResult("execute-result", "Transfer confirmed ·", sig); await refreshPlan();
 }));
 $("try-unauthorized").addEventListener("click", () => withBusy($("try-unauthorized") as HTMLButtonElement, "unauthorized-result", async () => {
   if (!livePlan) await refreshPlan();
@@ -196,7 +200,7 @@ $("inspect-demo-plan").addEventListener("click", () => inspectPlan(DEMO_PLAN, "d
 $("copy-demo-wallet").addEventListener("click", () => copyAddress(DEMO_WALLET, "wallet-copy-result"));
 $("copy-created-plan").addEventListener("click", () => copyAddress(($("created-plan-address").textContent ?? ""), "plan-copy-result"));
 
+if (window.solana?.isPhantom && window.solana.publicKey) wallet = window.solana;
 text("proposal-status", proposalStatus);
-updateWalletNote();
-text("rpc-state", "Public Solana devnet RPC · read-only until wallet connects");
-updateButtons();
+updateWalletUi();
+text("rpc-state", wallet ? "Public Solana devnet RPC · live reads" : "Public Solana devnet RPC · read-only until wallet connects");

@@ -49,8 +49,6 @@ npm ci
 npm run dev
 ```
 
-The GitHub Pages workflow builds and publishes `app/` for `main` and the demo branch.
-
 ## Project status
 
 The Stage 1 devnet client is implemented. On-chain program source has not started in this repository.
