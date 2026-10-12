@@ -61,7 +61,7 @@ async function copyAddress(value: string, resultId: string) {
 }
 const withBusy = async (button: HTMLButtonElement, resultId: string, fn: () => Promise<void>) => {
   if (busy) return;
-  busy = true; button.disabled = true;
+  busy = true; button.disabled = true; updateButtons();
   try { await fn(); } catch (error) { setResult(resultId, displayError(error), "error"); }
   finally { busy = false; updateButtons(); }
 };
@@ -72,6 +72,8 @@ function updateButtons() {
   $("execute").toggleAttribute("disabled", state.execute);
   $("try-unauthorized").toggleAttribute("disabled", state.unauthorized);
   $("try-early").toggleAttribute("disabled", state.early);
+  $("inspect").toggleAttribute("disabled", busy || planLoading);
+  $("inspect-demo-plan").toggleAttribute("disabled", busy || planLoading);
 }
 function renderPlan(plan: any, address: PublicKey) {
   livePlan = plan;
@@ -230,6 +232,7 @@ $("try-early").addEventListener("click", () => withBusy($("try-early") as HTMLBu
 }));
 
 async function inspectPlan(value: string, resultId = "inspect-result") {
+  if (busy || planLoading) return;
   planLoading = true;
   const request = ++planRequest;
   clearPlan();
