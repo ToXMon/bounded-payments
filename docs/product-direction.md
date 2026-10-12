@@ -6,7 +6,7 @@ The team selected a human control problem:
 
 > People want software to make routine payments for them, but they do not want to grant unrestricted access or approve every payment.
 
-The team will prove the payment controls before it adds agent selection or wallet UX.
+The team will prove the payment controls before it adds agent selection or production wallet UX. The devnet demo uses a thin Phantom client without changing the on-chain trust boundary.
 
 ## Why this direction
 

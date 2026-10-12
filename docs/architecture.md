@@ -166,7 +166,7 @@ Read `decimals` from the mint at runtime; `transfer_checked` verifies it.
 | Rent sysvar | Sysvar | `SysvarRent111111111111111111111111111111111` | Both `init` constraints in `create_plan` (D6) |
 | Circle (USDC issuer) | Off-chain authority | None | Can freeze any USDC account |
 | Agent or scheduler | Off-chain process | None | Submits `execute_transfer` |
-| Web UI | Off-chain client | None | Builds `create_plan` |
+| Web UI | Off-chain client | None | Reads plan and token state; builds `create_plan`, plain SPL funding, `execute_transfer`, and rejection demos |
 
 ## 7. Architecture diagrams
 

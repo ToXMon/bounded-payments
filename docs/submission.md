@@ -200,7 +200,7 @@ Anchor 0.31, per `AGENTS.md`.
 | Rent sysvar | `SysvarRent111111111111111111111111111111111` | Both `init` constraints |
 | Circle (USDC issuer) | off-chain authority | Can freeze any USDC account, including the vault |
 | Agent or scheduler | off-chain process | Submits `execute_transfer` |
-| Web UI | off-chain client | Builds `create_plan` |
+| Web UI | off-chain client | See `app/` for the client: it reads plan and token state, and builds the guided Stage 1 transactions and rejection demos. |
 
 ## 8. Granularity self-check
 

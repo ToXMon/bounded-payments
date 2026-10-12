@@ -19,7 +19,7 @@ Use case 2 depends on a complete and tested use case 1. The agent, passkey walle
 
 ## Success criteria
 
-- The owner can define a recipient, amount, interval, total limit, and expiry.
+- The owner can define a recipient, amount, interval, and payment count; the program derives the total limit and expiry.
 - The owner can fund a vault without granting the caller control of the vault.
 - An authorized caller can execute a due transfer.
 - The program rejects an early, excessive, expired, or unauthorized transfer.
@@ -35,9 +35,25 @@ Use case 2 depends on a complete and tested use case 1. The agent, passkey walle
 - [Contribution workflow](CONTRIBUTING.md)
 - [Scope decision](docs/adr/0001-stage-the-poc-around-a-recurring-transfer.md)
 
+## Devnet demo
+
+The guided client lives in `app/`. It starts in read-only mode and uses Phantom only after a visitor connects a pre-funded devnet wallet.
+
+The demo creates a fixed plan, funds its vault with a plain SPL Token transfer, executes a due transfer, reads balances and plan state, and shows REQ-20 and REQ-21 rejection checks. The x402 envelope is a proposal only; it is not Stage 1 functionality.
+
+Run it locally:
+
+```sh
+cd app
+npm ci
+npm run dev
+```
+
+The GitHub Pages workflow builds and publishes `app/` for `main` and the demo branch.
+
 ## Project status
 
-The team has selected the problem and POC sequence. Program code has not started.
+The Stage 1 devnet client is implemented. On-chain program source has not started in this repository.
 
 ## FigJam
 
