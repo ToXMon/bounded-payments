@@ -104,6 +104,7 @@ function clearPlan() {
   recipientAddress = undefined;
   livePlan = undefined;
   planReadOnly = false;
+  text("plan-state", "No live plan loaded.");
   $("plan-fields").replaceChildren();
   text("vault-balance", "— USDC");
   text("recipient-balance", "— USDC");
