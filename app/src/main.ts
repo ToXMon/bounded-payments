@@ -19,7 +19,6 @@ let program: Program<Idl> | undefined;
 let planAddress: PublicKey | undefined;
 let vaultAddress: PublicKey | undefined;
 let recipientAddress: PublicKey | undefined;
-let recipientOwner: PublicKey | undefined;
 let livePlan: any;
 let busy = false;
 
@@ -88,10 +87,32 @@ async function refreshBalances() {
     text("recipient-balance", `${formatAmount(recipient.amount.toString())} USDC`);
   } catch { text("vault-balance", "Account not found"); }
 }
+function clearPlan() {
+  planAddress = undefined;
+  vaultAddress = undefined;
+  recipientAddress = undefined;
+  livePlan = undefined;
+  $("plan-fields").replaceChildren();
+  text("vault-balance", "— USDC");
+  text("recipient-balance", "— USDC");
+  updateButtons();
+}
+function commitPlan(plan: any, address: PublicKey) {
+  planAddress = address;
+  vaultAddress = getAssociatedTokenAddressSync(MINT, address, true);
+  recipientAddress = plan.recipient;
+  renderPlan(plan, address);
+}
 async function refreshPlan() {
   if (!planAddress) return;
-  try { renderPlan(await (getProgram().account as any).paymentPlan.fetch(planAddress), planAddress); await refreshBalances(); }
-  catch (error) { text("plan-state", `No live plan at ${planAddress.toBase58()} · ${displayError(error)}`); }
+  const address = planAddress;
+  try {
+    const plan = await (getProgram().account as any).paymentPlan.fetch(address);
+    commitPlan(plan, address); await refreshBalances();
+  } catch (error) {
+    clearPlan();
+    text("plan-state", `No live plan at ${address.toBase58()} · ${displayError(error)}`);
+  }
 }
 async function makeTransaction(instructions: Transaction["instructions"]) {
   const tx = new Transaction().add(...instructions);
@@ -132,19 +153,21 @@ $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HT
   if (!wallet?.publicKey) throw new Error("Connect Phantom first.");
   const id = inputs.id.value.trim();
   if (!/^\d+$/.test(id) || BigInt(id) < 1n || BigInt(id) > (1n << 64n) - 1n) throw new Error("Plan ID must be a positive u64.");
-  recipientOwner = new PublicKey(inputs.recipient.value.trim() || wallet.publicKey.toBase58());
+  const recipientOwner = new PublicKey(inputs.recipient.value.trim() || wallet.publicKey.toBase58());
   const caller = new PublicKey(inputs.caller.value.trim() || wallet.publicKey.toBase58());
-  recipientAddress = getAssociatedTokenAddressSync(MINT, recipientOwner);
-  planAddress = planPda(wallet.publicKey, id); vaultAddress = getAssociatedTokenAddressSync(MINT, planAddress, true);
+  const recipient = getAssociatedTokenAddressSync(MINT, recipientOwner);
+  const address = planPda(wallet.publicKey, id);
+  const vault = getAssociatedTokenAddressSync(MINT, address, true);
   const now = Math.floor(Date.now() / 1000);
   const due = inputs.due.value ? Math.floor(new Date(inputs.due.value).getTime() / 1000) : null;
   if (due !== null && (!Number.isSafeInteger(due) || due < now)) throw new Error("First due time must be in the future or left blank.");
   const ix = await getProgram().methods.createPlan(new BN(id), new BN(1_000_000), new BN(60), new BN(3), due === null ? null : new BN(due), caller)
-    .accounts({ owner: wallet.publicKey, plan: planAddress, mint: MINT, recipient: recipientAddress, vault: vaultAddress, tokenProgram: TOKEN_PROGRAM_ID }).instruction();
-  const ata = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, recipientAddress, recipientOwner, MINT);
+    .accounts({ owner: wallet.publicKey, plan: address, mint: MINT, recipient, vault, tokenProgram: TOKEN_PROGRAM_ID }).instruction();
+  const ata = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, recipient, recipientOwner, MINT);
   const sig = await makeTransaction([ata, ix]);
+  planAddress = address; vaultAddress = vault; recipientAddress = recipient; livePlan = undefined; updateButtons();
   setTransactionResult("create-result", "Plan created ·", sig);
-  text("created-plan-address", planAddress.toBase58()); $("created-plan").removeAttribute("hidden");
+  text("created-plan-address", address.toBase58()); $("created-plan").removeAttribute("hidden");
   await refreshPlan();
 }));
 
@@ -186,19 +209,18 @@ $("try-early").addEventListener("click", () => withBusy($("try-early") as HTMLBu
 async function inspectPlan(value: string, resultId = "inspect-result") {
   try {
     const address = new PublicKey(value.trim());
-    planAddress = address;
     const plan = await (getProgram().account as any).paymentPlan.fetch(address);
-    vaultAddress = getAssociatedTokenAddressSync(MINT, address, true);
-    recipientAddress = plan.recipient;
-    renderPlan(plan, address); await refreshBalances();
+    commitPlan(plan, address); await refreshBalances();
     setResult(resultId, "Live plan state loaded from devnet.", "ok"); updateButtons();
     $("live-plan").scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) { setResult(resultId, `Live read failed · ${displayError(error)}`, "error"); }
+  } catch (error) {
+    clearPlan();
+    setResult(resultId, `Live read failed · ${displayError(error)}`, "error");
+  }
 }
 $("inspect").addEventListener("click", () => inspectPlan(($("inspect-address") as HTMLInputElement).value));
 $("inspect-demo-plan").addEventListener("click", () => inspectPlan(DEMO_PLAN, "demo-plan-result"));
 $("copy-demo-wallet").addEventListener("click", () => copyAddress(DEMO_WALLET, "wallet-copy-result"));
-$("copy-created-plan").addEventListener("click", () => copyAddress(($("created-plan-address").textContent ?? ""), "plan-copy-result"));
 
 if (window.solana?.isPhantom && window.solana.publicKey) wallet = window.solana;
 text("proposal-status", proposalStatus);
