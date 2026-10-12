@@ -2,7 +2,8 @@
   "name": "bounded-payments",
   "private": true,
   "scripts": {
-    "test": "anchor test"
+    "test": "cargo test --workspace && npx tsc --noEmit",
+    "test:devnet": "npx mocha -r ts-node/register --timeout 30000 tests/**/*.ts"
   },
   "devDependencies": {
     "@coral-xyz/anchor": "0.31.1",

@@ -19,4 +19,4 @@ cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "npx mocha -r ts-node/register --timeout 30000 tests/**/*.ts"
+test = "npm test"
