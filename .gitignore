@@ -2,6 +2,8 @@
 .env
 .env.*
 *.json
+!app/package-lock.json
+!app/src/bounded_payments.json
 !package.json
 !tsconfig.json
 !.devin/config.json

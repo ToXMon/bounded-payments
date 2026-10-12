@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f5f1" />
+    <title>Bounded Payments — Devnet field test</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="topbar"><a class="brand" href="#top"><span class="brand-mark">B</span> Bounded Payments</a><span class="network"><i></i> DEVNET · SOLANA</span></header>
+    <main id="top">
+      <section class="hero">
+        <div class="eyebrow">STAGE 1 · LIVE PROTOCOL WALKTHROUGH</div>
+        <h1>Money moves<br /><span>only when it should.</span></h1>
+        <p class="intro">Create a fixed payment plan. Fund its vault. Let the program—not the caller—enforce when and where USDC moves.</p>
+        <div class="hero-meta"><span class="chain-pill">◎ Solana Devnet</span><span>Classic USDC · 6 decimals</span><span id="rpc-state">Connecting to public RPC…</span></div>
+      </section>
+
+      <section class="workspace">
+        <div class="section-heading"><div><div class="eyebrow">THE GUIDED PATH</div><h2>One plan, one bounded transfer.</h2></div><button id="connect" class="contrast">Connect Phantom</button></div>
+        <div id="wallet-note" class="wallet-note">Read-only mode · connect a pre-funded demo wallet to submit transactions.</div>
+        <div class="steps">
+          <article class="step" id="step-create"><div class="step-number">01</div><div class="step-body"><div class="step-title"><h3>Create a payment plan</h3><span class="tag">OWNER SIGNS</span></div><p>Set a fixed recipient, payment amount, schedule, and authorized caller. The program derives the total limit and expiry.</p>
+            <div class="step-details"><div><span>AMOUNT</span><strong>1.00 USDC</strong></div><div><span>INTERVAL</span><strong>60 seconds</strong></div><div><span>PAYMENTS</span><strong>3 total</strong></div><div><span>MAXIMUM</span><strong>3.00 USDC</strong></div></div>
+            <details class="advanced"><summary>Advanced inputs</summary><div class="form-grid"><label>Plan ID<input id="plan-id" type="number" min="1" value="1" /></label><label>Recipient wallet<input id="recipient" placeholder="Wallet address" autocomplete="off" /></label><label>Authorized caller<input id="caller" placeholder="Defaults to connected wallet" autocomplete="off" /></label><label>First transfer due<input id="first-due" type="datetime-local" /></label></div><small>Leave the due time blank to make the first transfer due now. Set it ahead to test an early rejection.</small></details>
+            <button class="outline action" id="create-plan" disabled>Create fixed plan</button><div class="result" id="create-result" aria-live="polite"></div>
+          </div></article>
+          <article class="step" id="step-fund"><div class="step-number">02</div><div class="step-body"><div class="step-title"><h3>Fund the vault</h3><span class="tag muted">PLAIN SPL TOKEN TRANSFER</span></div><p>Funding is not a program handler. Send 3.00 USDC to the plan vault; the plan PDA remains its authority.</p><div class="balance-row"><span>Vault balance</span><strong id="vault-balance">— USDC</strong></div><button class="outline action" id="fund-vault" disabled>Fund with 3.00 USDC</button><div class="result" id="fund-result" aria-live="polite"></div></div></article>
+          <article class="step" id="step-execute"><div class="step-number">03</div><div class="step-body"><div class="step-title"><h3>Execute the due transfer</h3><span class="tag">AUTHORIZED CALLER SIGNS</span></div><p>The caller submits the request. The program checks authority, due time, expiry, limit, and recipient before moving funds.</p><div class="balance-row"><span>Recipient balance</span><strong id="recipient-balance">— USDC</strong></div><button class="outline action" id="execute" disabled>Execute 1.00 USDC transfer</button><div class="result" id="execute-result" aria-live="polite"></div></div></article>
+        </div>
+      </section>
+
+      <section class="evidence-area">
+        <div class="section-heading"><div><div class="eyebrow">PROOF, NOT PROMISES</div><h2>Inspect the evidence.</h2></div></div>
+        <div class="evidence-grid"><article class="evidence-card"><div class="card-top"><span>LIVE PLAN STATE</span><span class="live-dot"></span></div><p id="plan-state">Connect a wallet or inspect a Payment Plan PDA.</p><dl id="plan-fields"></dl></article><article class="evidence-card"><div class="card-top"><span>FINALIZED DEVNET ACTIVITY</span><span class="tag muted">RECORDED FALLBACK</span></div><p>Use recorded transaction links when live RPC data is unavailable. These signatures are finalized; no balance snapshot was supplied.</p><ul class="tx-list"><li><span>Plan created</span><a href="https://explorer.solana.com/tx/2F9aGvvCDdv2XrLuPmqcwk9CRuiLJGrEtQMPoXCbiWhCNNqApCMsoBo8SamKkwf7oxHd5goBzJMMgZTXoyDBHkwc?cluster=devnet" target="_blank" rel="noreferrer">View transaction ↗</a></li><li><span>Vault funded</span><a href="https://explorer.solana.com/tx/3EDZfaHX7XMYvoSQbgat7dDdfhyGNXo1zEMcMmKK1KE1erdhhfgGapSnQs682PeNa7oH9EDdvGRasC7ebnxdUAWZ?cluster=devnet" target="_blank" rel="noreferrer">View transaction ↗</a></li><li><span>Transfer executed</span><a href="https://explorer.solana.com/tx/2zgzDYL9pDmgyGyErQR2PjuYYbo5eGbY5UfVL4jzt56VxA2ZfxdnnbnMaeigz9qDVAA9ntQKRPzFtGLNqzse4xcT?cluster=devnet" target="_blank" rel="noreferrer">View transaction ↗</a></li></ul></article></div>
+        <details class="inspect"><summary>Inspect an existing Payment Plan PDA</summary><div class="inspect-row"><input id="inspect-address" placeholder="Payment Plan PDA" autocomplete="off" /><button id="inspect" class="outline">Read from devnet</button></div><div id="inspect-result" class="result" aria-live="polite"></div></details>
+        <div class="rejection-grid"><article><div class="eyebrow">REJECTION TEST · REQ-20</div><h3>Wrong caller</h3><p>Try an execute request from a wallet other than the stored authorized caller. The transaction must fail and preserve state.</p><button id="try-unauthorized" class="text-action" disabled>Test unauthorized caller →</button><div id="unauthorized-result" class="result" aria-live="polite"></div></article><article><div class="eyebrow">REJECTION TEST · REQ-21</div><h3>Too early</h3><p>Choose a future first due time above, create the plan, then attempt its transfer before that time.</p><button id="try-early" class="text-action" disabled>Test early transfer →</button><div id="early-result" class="result" aria-live="polite"></div></article></div>
+      </section>
+
+      <section class="experiment"><div class="eyebrow">PROPOSED NEXT VALIDATION EXPERIMENT</div><h2>A narrow x402 test, later.</h2><p>Owner-funded USDC envelope · one approved x402 payee · hard per-payment and total caps · verifiable receipt.</p><span class="not-stage">PROPOSAL ONLY · NOT IMPLEMENTED STAGE 1 FUNCTIONALITY</span></section>
+      <section class="passkey"><details><summary>Why not use a passkey?</summary><p>A passkey could simplify owner sign-in in a later identity layer. <strong>It is a future identity layer not used by the Stage 1 program.</strong></p></details></section>
+    </main>
+    <footer><span>Bounded Payments · Stage 1</span><span>Devnet only · Never use a mainnet wallet</span></footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
