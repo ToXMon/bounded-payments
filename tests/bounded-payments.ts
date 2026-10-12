@@ -1,9 +1,10 @@
 import * as anchor from "@coral-xyz/anchor";
 import { expect } from "chai";
-import { createAssociatedTokenAccountInstruction, getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createAssociatedTokenAccountInstruction, createTransferCheckedInstruction, getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 
 const USDC = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+const OTHER_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 describe("bounded-payments: Stage 1", () => {
   const provider = anchor.AnchorProvider.env();
@@ -65,8 +66,44 @@ describe("bounded-payments: Stage 1", () => {
       [Buffer.from("plan"), owner.publicKey.toBuffer(), new anchor.BN(id).toArrayLike(Buffer, "le", 8)], program.programId,
     )[1]);
     expect(plan.expiry.toNumber()).to.equal(plan.nextDueAt.toNumber() + 180);
-    const vault = await getAccount(provider.connection, getAssociatedTokenAddressSync(USDC, planAddress(id), true));
+    const vaultAddress = getAssociatedTokenAddressSync(USDC, planAddress(id), true);
+    const vault = await getAccount(provider.connection, vaultAddress);
     expect(vault.owner.equals(planAddress(id))).to.equal(true);
+    const source = getAssociatedTokenAddressSync(USDC, owner.publicKey);
+    const sourceBefore = await getAccount(provider.connection, source);
+    await provider.sendAndConfirm(new anchor.web3.Transaction().add(
+      createTransferCheckedInstruction(source, USDC, vaultAddress, owner.publicKey, 10n, 6, [], TOKEN_PROGRAM_ID),
+    ));
+    const recipientBefore = await getAccount(provider.connection, recipient);
+    await program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey, plan: planAddress(id), mint: USDC,
+      vault: vaultAddress, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc();
+    const recipientAfter = await getAccount(provider.connection, recipient);
+    const vaultAfter = await getAccount(provider.connection, vaultAddress);
+    const paid = await program.account.paymentPlan.fetch(planAddress(id));
+    expect(recipientAfter.amount - recipientBefore.amount).to.equal(10n); // REQ-25
+    expect(sourceBefore.amount - (await getAccount(provider.connection, source)).amount).to.equal(10n); // plain SPL funding
+    expect(vaultAfter.amount).to.equal(0n);
+    expect(paid.paidTotal.toNumber()).to.equal(10); // REQ-26
+    expect(paid.nextDueAt.gt(plan.nextDueAt)).to.equal(true); // REQ-27
+  });
+
+  it("REQ-03 and REQ-17: rejects a non-USDC mint and a non-USDC recipient", async () => {
+    const otherOwner = anchor.web3.Keypair.generate();
+    const otherRecipient = getAssociatedTokenAddressSync(OTHER_MINT, otherOwner.publicKey);
+    await provider.sendAndConfirm(new anchor.web3.Transaction().add(
+      createAssociatedTokenAccountInstruction(owner.publicKey, otherRecipient, otherOwner.publicKey, OTHER_MINT),
+    ));
+    const args = (id: number) => [new anchor.BN(id), new anchor.BN(10), new anchor.BN(60), new anchor.BN(3), null, caller.publicKey] as const;
+    const wrongMintId = nextId++;
+    await rejects(program.methods.createPlan(...args(wrongMintId)).accounts({ owner: owner.publicKey, plan: planAddress(wrongMintId),
+      mint: OTHER_MINT, recipient: otherRecipient, vault: getAssociatedTokenAddressSync(OTHER_MINT, planAddress(wrongMintId), true),
+      tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+      systemProgram: SystemProgram.programId }).rpc()); // REQ-03
+    const wrongRecipientId = nextId++;
+    await rejects(program.methods.createPlan(...args(wrongRecipientId)).accounts({ owner: owner.publicKey, plan: planAddress(wrongRecipientId),
+      mint: USDC, recipient: otherRecipient, vault: getAssociatedTokenAddressSync(USDC, planAddress(wrongRecipientId), true),
+      tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+      systemProgram: SystemProgram.programId }).rpc()); // REQ-17
   });
 
   it("REQ-13..19: rejects invalid creation inputs", async () => {

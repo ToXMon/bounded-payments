@@ -26,7 +26,7 @@ pub mod bounded_payments {
         require!(authorized_caller != Pubkey::default(), PlanError::ZeroAuthorizedCaller);
         let next_due_at = first_due_at.unwrap_or(now);
         require!(next_due_at >= now, PlanError::FirstDueInPast);
-        let total_limit = amount.checked_mul(payment_count).ok_or(PlanError::MathOverflow)?;
+        let total_limit = checked_total_limit(amount, payment_count).ok_or(PlanError::MathOverflow)?;
         let schedule_span = interval
             .checked_mul(i64::try_from(payment_count).map_err(|_| PlanError::MathOverflow)?)
             .ok_or(PlanError::MathOverflow)?;
@@ -52,8 +52,7 @@ pub mod bounded_payments {
         let plan = &ctx.accounts.plan;
         require!(now >= plan.next_due_at, PlanError::TransferNotDue);
         require!(now <= plan.expiry, PlanError::PlanExpired);
-        let paid_total = plan.paid_total.checked_add(plan.amount).ok_or(PlanError::MathOverflow)?;
-        require!(paid_total <= plan.total_limit, PlanError::LimitExceeded);
+        let paid_total = checked_paid_total(plan.paid_total, plan.amount, plan.total_limit)?;
         let next_due_at = next_scheduled_time(now, plan.next_due_at, plan.interval)
             .ok_or(PlanError::MathOverflow)?;
 
@@ -165,6 +164,18 @@ fn checked_add(left: i64, right: i64) -> Option<i64> {
     left.checked_add(right)
 }
 
+fn checked_total_limit(amount: u64, count: u64) -> Option<u64> {
+    amount.checked_mul(count)
+}
+
+fn checked_paid_total(paid: u64, amount: u64, limit: u64) -> core::result::Result<u64, PlanError> {
+    let total = paid.checked_add(amount).ok_or(PlanError::MathOverflow)?;
+    if total > limit {
+        return Err(PlanError::LimitExceeded);
+    }
+    Ok(total)
+}
+
 fn next_scheduled_time(now: i64, due_at: i64, interval: i64) -> Option<i64> {
     let elapsed = now.checked_sub(due_at)?;
     let intervals = elapsed.checked_div(interval)?.checked_add(1)?;
@@ -173,7 +184,7 @@ fn next_scheduled_time(now: i64, due_at: i64, interval: i64) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{checked_add, next_scheduled_time};
+    use super::{checked_add, checked_paid_total, checked_total_limit, next_scheduled_time, PlanError};
 
     #[test]
     fn schedule_advances_to_first_time_after_now() {
@@ -185,6 +196,13 @@ mod tests {
     fn schedule_overflow_fails_without_wrapping() {
         assert_eq!(next_scheduled_time(i64::MAX, i64::MAX - 1, 1), None); // REQ-28
         assert_eq!(checked_add(i64::MAX, 1), None); // REQ-19
+        assert_eq!(checked_total_limit(u64::MAX, 2), None); // REQ-19
+    }
+
+    #[test]
+    fn rejects_payment_above_limit() {
+        assert!(matches!(checked_paid_total(20, 10, 29), Err(PlanError::LimitExceeded))); // REQ-23
+        assert!(matches!(checked_paid_total(u64::MAX, 1, u64::MAX), Err(PlanError::MathOverflow))); // REQ-28
     }
 }
 
