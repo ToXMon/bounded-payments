@@ -172,5 +172,17 @@ describe("bounded-payments: Stage 1", () => {
     const after = await program.account.paymentPlan.fetch(planAddress(id));
     expect(after.paidTotal.eq(before.paidTotal)).to.equal(true);
     expect(after.nextDueAt.eq(before.nextDueAt)).to.equal(true);
+
+    const unfundedId = nextId++;
+    await create({}, unfundedId);
+    const unfundedBefore = await program.account.paymentPlan.fetch(planAddress(unfundedId));
+    const recipientBefore = await getAccount(provider.connection, recipient);
+    const vault = getAssociatedTokenAddressSync(USDC, planAddress(unfundedId), true);
+    await rejects(program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey, plan: planAddress(unfundedId),
+      mint: USDC, vault, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc()); // REQ-25
+    const unfundedAfter = await program.account.paymentPlan.fetch(planAddress(unfundedId));
+    expect(unfundedAfter.paidTotal.eq(unfundedBefore.paidTotal)).to.equal(true); // REQ-29
+    expect(unfundedAfter.nextDueAt.eq(unfundedBefore.nextDueAt)).to.equal(true);
+    expect((await getAccount(provider.connection, recipient)).amount).to.equal(recipientBefore.amount);
   });
 });
