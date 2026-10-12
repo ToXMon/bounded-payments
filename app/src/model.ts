@@ -1,5 +1,12 @@
 export const proposalStatus = "PROPOSAL ONLY · NOT IMPLEMENTED STAGE 1 FUNCTIONALITY";
 
+export function walletDescription(connectedAddress: string | null, demoAddress: string): string {
+  if (!connectedAddress) return "READ-ONLY · no wallet connected. Connect the demo wallet in Phantom to sign.";
+  return connectedAddress === demoAddress
+    ? "CONNECTED · the default demo wallet is connected in Phantom."
+    : "CONNECTED · this wallet is not the default demo wallet.";
+}
+
 export function canExecute(nextDueAt: number, now: number): boolean {
   return now >= nextDueAt;
 }

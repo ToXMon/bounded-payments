@@ -3,11 +3,13 @@ import { AnchorProvider, BN, Program, type Idl } from "@coral-xyz/anchor";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { clusterApiUrl, Connection, PublicKey, Transaction } from "@solana/web3.js";
 import idl from "./bounded_payments.json";
-import { actionDisabled, canExecute, expectedRejection, formatAmount, proposalStatus } from "./model";
+import { actionDisabled, canExecute, expectedRejection, formatAmount, proposalStatus, walletDescription } from "./model";
 import "./style.css";
 
 const PROGRAM_ID = new PublicKey("Hcgo55q8sQZW1cw6UBBErqZEhCYGjph7PKmK26rvkp2Z");
 const MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+const DEMO_WALLET = "AH6Bdc2XW2Xaq12tfjSt4WQvYN8fzs385yJFBbnprtyg";
+const DEMO_PLAN = "FFKWiEKrmQ5cwbdqQLu2Mq9iY3SZMUvg3UU4tZUtMuwM";
 const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const text = (id: string, value: string) => { $(id).textContent = value; };
@@ -42,6 +44,11 @@ const displayError = (error: unknown) => error instanceof Error ? error.message.
 const setResult = (id: string, message: string, state: "ok" | "error" | "info" = "info") => {
   const node = $(id); node.textContent = message; node.className = `result ${state}`;
 };
+const updateWalletNote = () => text("wallet-note", walletDescription(wallet?.publicKey?.toBase58() ?? null, DEMO_WALLET));
+async function copyAddress(value: string, resultId: string) {
+  try { await navigator.clipboard.writeText(value); setResult(resultId, "Address copied.", "ok"); }
+  catch { setResult(resultId, "Clipboard unavailable. Select and copy the address above.", "error"); }
+}
 const withBusy = async (button: HTMLButtonElement, resultId: string, fn: () => Promise<void>) => {
   if (busy) return;
   busy = true; button.disabled = true;
@@ -106,11 +113,16 @@ $("connect").addEventListener("click", async () => {
     program = new Program(idl as Idl, provider());
     button.textContent = `${publicKey.toBase58().slice(0, 4)}…${publicKey.toBase58().slice(-4)}`;
     button.disabled = true;
-    text("wallet-note", "Connected to Phantom · Use a pre-funded devnet wallet. Transactions require your approval.");
+    updateWalletNote();
     text("rpc-state", "Public Solana devnet RPC · live reads"); updateButtons();
   } catch (error) { setResult("create-result", displayError(error), "error"); }
 });
-window.solana?.on("accountChanged", (key) => { wallet = key && window.solana ? window.solana : undefined; updateButtons(); });
+window.solana?.on("accountChanged", (key) => {
+  wallet = key && window.solana ? window.solana : undefined; program = undefined;
+  const button = $("connect") as HTMLButtonElement; button.disabled = !!key;
+  button.textContent = key ? `Connected · ${key.toBase58().slice(0, 4)}…${key.toBase58().slice(-4)}` : "Connect Phantom";
+  updateWalletNote(); updateButtons();
+});
 
 $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HTMLButtonElement, "create-result", async () => {
   if (!wallet?.publicKey) throw new Error("Connect Phantom first.");
@@ -127,7 +139,9 @@ $("create-plan").addEventListener("click", () => withBusy($("create-plan") as HT
     .accounts({ owner: wallet.publicKey, plan: planAddress, mint: MINT, recipient: recipientAddress, vault: vaultAddress, tokenProgram: TOKEN_PROGRAM_ID }).instruction();
   const ata = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, recipientAddress, recipientOwner, MINT);
   const sig = await makeTransaction([ata, ix]);
-  setTransactionResult("create-result", "Plan created ·", sig); await refreshPlan();
+  setTransactionResult("create-result", "Plan created ·", sig);
+  text("created-plan-address", planAddress.toBase58()); $("created-plan").removeAttribute("hidden");
+  await refreshPlan();
 }));
 
 $("fund-vault").addEventListener("click", () => withBusy($("fund-vault") as HTMLButtonElement, "fund-result", async () => {
@@ -165,18 +179,24 @@ $("try-early").addEventListener("click", () => withBusy($("try-early") as HTMLBu
   }
 }));
 
-$("inspect").addEventListener("click", async () => {
+async function inspectPlan(value: string, resultId = "inspect-result") {
   try {
-    const address = new PublicKey(($("inspect-address") as HTMLInputElement).value.trim());
+    const address = new PublicKey(value.trim());
     planAddress = address;
     const plan = await (getProgram().account as any).paymentPlan.fetch(address);
     vaultAddress = getAssociatedTokenAddressSync(MINT, address, true);
     recipientAddress = plan.recipient;
     renderPlan(plan, address); await refreshBalances();
-    setResult("inspect-result", "Live plan state loaded from devnet.", "ok"); updateButtons();
-  } catch (error) { setResult("inspect-result", `Live read failed · ${displayError(error)}`, "error"); }
-});
+    setResult(resultId, "Live plan state loaded from devnet.", "ok"); updateButtons();
+    $("live-plan").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) { setResult(resultId, `Live read failed · ${displayError(error)}`, "error"); }
+}
+$("inspect").addEventListener("click", () => inspectPlan(($("inspect-address") as HTMLInputElement).value));
+$("inspect-demo-plan").addEventListener("click", () => inspectPlan(DEMO_PLAN, "demo-plan-result"));
+$("copy-demo-wallet").addEventListener("click", () => copyAddress(DEMO_WALLET, "wallet-copy-result"));
+$("copy-created-plan").addEventListener("click", () => copyAddress(($("created-plan-address").textContent ?? ""), "plan-copy-result"));
 
 text("proposal-status", proposalStatus);
+updateWalletNote();
 text("rpc-state", "Public Solana devnet RPC · read-only until wallet connects");
 updateButtons();

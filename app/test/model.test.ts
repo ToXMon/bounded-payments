@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { actionDisabled, canExecute, expectedRejection, formatAmount, proposalStatus } from "../src/model.ts";
+import { actionDisabled, canExecute, expectedRejection, formatAmount, proposalStatus, walletDescription } from "../src/model.ts";
 
 test("REQ-21: early attempts fail the due-time check and due attempts pass", () => {
   assert.equal(canExecute(200, 199.9), false);
@@ -29,6 +29,12 @@ test("read-only controls stay disabled until a wallet and plan are available", (
   assert.equal(actionDisabled(true, false, false).createPlan, false);
   assert.equal(actionDisabled(true, false, false).execute, true);
   assert.equal(actionDisabled(true, true, false).execute, false);
+});
+
+test("REQ-52: wallet status distinguishes read-only, the demo wallet, and another connected wallet", () => {
+  assert.match(walletDescription(null, "demo"), /^READ-ONLY/);
+  assert.match(walletDescription("demo", "demo"), /default demo wallet is connected/);
+  assert.match(walletDescription("other", "demo"), /not the default demo wallet/);
 });
 
 test("the next experiment remains explicitly outside Stage 1", () => {
