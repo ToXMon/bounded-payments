@@ -79,7 +79,7 @@ describe("bounded-payments: Stage 1", () => {
     throw new Error(`plan ${id} did not become due`);
   }
 
-  async function create(overrides: Record<string, unknown> = {}, id = nextId++) {
+  async function create(id = nextId++) {
     return program.methods.createPlan(
       new anchor.BN(id), new anchor.BN(10), new anchor.BN(60), new anchor.BN(3), null, caller.publicKey,
     ).accounts({
@@ -91,7 +91,6 @@ describe("bounded-payments: Stage 1", () => {
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
-      ...overrides,
     }).rpc();
   }
 
@@ -106,7 +105,7 @@ describe("bounded-payments: Stage 1", () => {
 
   it("REQ-01..12 and REQ-25..27: funds the vault and executes a transfer", async () => {
     const id = nextId++;
-    const createSignature = await create({}, id);
+    const createSignature = await create(id);
     console.log(`create_plan signature: ${createSignature}`);
     const plan = await fetchPlan(id);
     expect(plan.owner.equals(owner.publicKey)).to.equal(true);
@@ -192,9 +191,9 @@ describe("bounded-payments: Stage 1", () => {
 
   it("REQ-30: rejects duplicate plan seeds without changing the original", async () => {
     const id = nextId++;
-    await create({}, id);
+    await create(id);
     const before = await fetchPlan(id);
-    await rejects(create({}, id));
+    await rejects(create(id));
     const after = await fetchPlan(id);
     expect(after.amount.eq(before.amount)).to.equal(true);
   });
@@ -223,7 +222,7 @@ describe("bounded-payments: Stage 1", () => {
     const vaultBefore = await getAccount(provider.connection, vault);
     const recipientBefore = await getAccount(provider.connection, recipient);
     await waitForDue(id);
-    await rejects(execute());
+    await rejects(execute(), "LimitExceeded");
     const planAfter = await fetchPlan(id);
     expect(planAfter.paidTotal.eq(planBefore.paidTotal)).to.equal(true);
     expect(planAfter.nextDueAt.eq(planBefore.nextDueAt)).to.equal(true);
@@ -267,7 +266,7 @@ describe("bounded-payments: Stage 1", () => {
     expect(after.nextDueAt.eq(before.nextDueAt)).to.equal(true);
 
     const unfundedId = nextId++;
-    await create({}, unfundedId);
+    await create(unfundedId);
     const unfundedBefore = await fetchPlan(unfundedId);
     const recipientBefore = await getAccount(provider.connection, recipient);
     const vault = getAssociatedTokenAddressSync(USDC, planAddress(unfundedId), true);

@@ -51,8 +51,8 @@ pub mod bounded_payments {
         let now = Clock::get()?.unix_timestamp;
         let plan = &ctx.accounts.plan;
         require!(now >= plan.next_due_at, PlanError::TransferNotDue);
-        require!(now <= plan.expiry, PlanError::PlanExpired);
         let paid_total = checked_paid_total(plan.paid_total, plan.amount, plan.total_limit)?;
+        require!(now <= plan.expiry, PlanError::PlanExpired);
         let next_due_at = next_scheduled_time(now, plan.next_due_at, plan.interval)
             .ok_or(PlanError::MathOverflow)?;
 
