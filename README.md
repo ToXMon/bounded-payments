@@ -19,7 +19,7 @@ Use case 2 depends on a complete and tested use case 1. The agent, passkey walle
 
 ## Success criteria
 
-- The owner can define a recipient, amount, interval, total limit, and expiry.
+- The owner can define a recipient, amount, interval, and payment count; the program derives the total limit and expiry.
 - The owner can fund a vault without granting the caller control of the vault.
 - An authorized caller can execute a due transfer.
 - The program rejects an early, excessive, expired, or unauthorized transfer.
