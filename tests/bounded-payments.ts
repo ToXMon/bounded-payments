@@ -58,6 +58,16 @@ describe("bounded-payments: Stage 1", () => {
     throw new Error(`plan ${id} did not reach paid_total ${expected}`);
   }
 
+  async function waitForDue(id: number) {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const plan = await fetchPlan(id);
+      const wait = plan.nextDueAt.toNumber() * 1000 - Date.now();
+      if (wait <= 0) return plan;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 1000)));
+    }
+    throw new Error(`plan ${id} did not become due`);
+  }
+
   async function create(overrides: Record<string, unknown> = {}, id = nextId++) {
     return program.methods.createPlan(
       new anchor.BN(id), new anchor.BN(10), new anchor.BN(60), new anchor.BN(3), null, caller.publicKey,
@@ -176,6 +186,40 @@ describe("bounded-payments: Stage 1", () => {
     await rejects(create({}, id));
     const after = await fetchPlan(id);
     expect(after.amount.eq(before.amount)).to.equal(true);
+  });
+
+  it("REQ-23 and REQ-29: rejects a due transfer after the final allowed payment", async () => {
+    const id = nextId++;
+    const firstDueAt = new anchor.BN(Math.floor(Date.now() / 1000) + 2);
+    await program.methods.createPlan(new anchor.BN(id), new anchor.BN(10), new anchor.BN(2), new anchor.BN(2), firstDueAt, caller.publicKey)
+      .accounts({ owner: owner.publicKey, plan: planAddress(id), mint: USDC, recipient,
+        vault: getAssociatedTokenAddressSync(USDC, planAddress(id), true), tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID, systemProgram: SystemProgram.programId }).rpc();
+    const vault = getAssociatedTokenAddressSync(USDC, planAddress(id), true);
+    const source = getAssociatedTokenAddressSync(USDC, owner.publicKey);
+    const sourceBefore = await getAccount(provider.connection, source);
+    await provider.sendAndConfirm(new anchor.web3.Transaction().add(
+      createTransferCheckedInstruction(source, USDC, vault, owner.publicKey, 20n, 6, [], TOKEN_PROGRAM_ID),
+    ));
+    await waitForTokenAccount(vault, 20n);
+    const execute = () => program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey,
+      plan: planAddress(id), mint: USDC, vault, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc();
+    await waitForDue(id);
+    await execute();
+    await waitForDue(id);
+    await execute();
+
+    const planBefore = await fetchPlan(id);
+    const vaultBefore = await getAccount(provider.connection, vault);
+    const recipientBefore = await getAccount(provider.connection, recipient);
+    await waitForDue(id);
+    await rejects(execute());
+    const planAfter = await fetchPlan(id);
+    expect(planAfter.paidTotal.eq(planBefore.paidTotal)).to.equal(true);
+    expect(planAfter.nextDueAt.eq(planBefore.nextDueAt)).to.equal(true);
+    expect((await getAccount(provider.connection, vault)).amount).to.equal(vaultBefore.amount);
+    expect((await getAccount(provider.connection, recipient)).amount).to.equal(recipientBefore.amount);
+    expect((await getAccount(provider.connection, source)).amount).to.equal(sourceBefore.amount - 20n);
   });
 
   it("REQ-22: rejects a transfer after expiry", async () => {

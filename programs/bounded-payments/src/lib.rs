@@ -98,6 +98,7 @@ pub struct CreatePlan<'info> {
     #[account(address = USDC_DEVNET)]
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(
+        owner = token_program.key() @ PlanError::WrongTokenProgram,
         constraint = recipient.mint == mint.key() @ PlanError::WrongMint
     )]
     pub recipient: InterfaceAccount<'info, TokenAccount>,
@@ -137,6 +138,7 @@ pub struct ExecuteTransfer<'info> {
     #[account(
         mut,
         address = plan.recipient,
+        owner = token_program.key() @ PlanError::WrongTokenProgram,
         constraint = recipient.mint == mint.key() @ PlanError::WrongMint
     )]
     pub recipient: InterfaceAccount<'info, TokenAccount>,
@@ -218,6 +220,8 @@ pub enum PlanError {
     FirstDueInPast,
     #[msg("Recipient token account has the wrong mint")]
     WrongMint,
+    #[msg("Recipient token account has the wrong token program")]
+    WrongTokenProgram,
     #[msg("Authorized caller cannot be the zero key")]
     ZeroAuthorizedCaller,
     #[msg("Checked arithmetic overflow")]

@@ -39,9 +39,10 @@ Use case 2 depends on a complete and tested use case 1. The agent, passkey walle
 ## Project status
 
 Stage 1 is implemented and deployed to devnet. The Anchor program has two
-handlers, `create_plan` and `execute_transfer`, and a passing local test suite
-for REQ-01 to REQ-30. The devnet deployment is verified on-chain; the devnet
-test rerun and its screenshot are the captain's live run, not yet captured.
+handlers, `create_plan` and `execute_transfer`, and the repository includes a
+devnet test suite for REQ-01 to REQ-30. The devnet deployment is verified
+on-chain; the devnet test rerun and its screenshot are the captain's live run,
+not yet captured.
 
 ## Architecture
 
@@ -99,7 +100,7 @@ npm run test:devnet
 Expected success markers:
 
 - `anchor build` finishes without errors and writes `target/idl/`.
-- Mocha reports `6 passing` and `0 failing`.
+- Mocha reports `7 passing` and `0 failing`.
 - Three transaction signatures are logged: `create_plan signature:`,
   `vault funding signature:`, and `execute_transfer signature:`.
 - Each test names its REQ ids, for example REQ-01 to REQ-12 and REQ-25 to REQ-27.
@@ -114,7 +115,7 @@ Capture the captain's live devnet run:
 
 - [ ] `solana program show` reports the Program ID executable on devnet.
 - [ ] `anchor build` succeeds and writes `target/idl/`.
-- [ ] `npm run test:devnet` reports `6 passing` and `0 failing`.
+- [ ] `npm run test:devnet` reports `7 passing` and `0 failing`.
 - [ ] Three transaction signatures appear in the output.
 - [ ] The run screenshot is saved to the path below.
 
@@ -124,7 +125,7 @@ Reserved for the captain's live run, not yet captured. No test output or
 screenshot has been fabricated for this submission.
 
 - Screenshot path: `docs/devnet-test-evidence.png`
-- Caption: `npm run test:devnet — 6 passing, 0 failing; create_plan, vault funding, and execute_transfer signatures on devnet`
+- Caption: `npm run test:devnet — 7 passing, 0 failing; create_plan, vault funding, and execute_transfer signatures on devnet`
 
 ## FigJam
 
