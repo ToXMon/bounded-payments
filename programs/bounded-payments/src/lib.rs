@@ -26,7 +26,7 @@ pub mod bounded_payments {
         require!(authorized_caller != Pubkey::default(), PlanError::ZeroAuthorizedCaller);
         let next_due_at = first_due_at.unwrap_or(now);
         require!(next_due_at >= now, PlanError::FirstDueInPast);
-        let total_limit = checked_total_limit(amount, payment_count).ok_or(PlanError::MathOverflow)?;
+        let total_limit = amount.checked_mul(payment_count).ok_or(PlanError::MathOverflow)?;
         let schedule_span = interval
             .checked_mul(i64::try_from(payment_count).map_err(|_| PlanError::MathOverflow)?)
             .ok_or(PlanError::MathOverflow)?;
@@ -171,10 +171,6 @@ fn validate_transfer(plan: &PaymentPlan, now: i64) -> core::result::Result<(u64,
     Ok((paid_total, next_due_at))
 }
 
-fn checked_total_limit(amount: u64, count: u64) -> Option<u64> {
-    amount.checked_mul(count)
-}
-
 fn checked_paid_total(paid: u64, amount: u64, limit: u64) -> core::result::Result<u64, PlanError> {
     let total = paid.checked_add(amount).ok_or(PlanError::MathOverflow)?;
     if total > limit {
@@ -192,7 +188,7 @@ fn next_scheduled_time(now: i64, due_at: i64, interval: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use anchor_lang::prelude::Pubkey;
-    use super::{checked_paid_total, checked_total_limit, next_scheduled_time, validate_transfer, PaymentPlan, PlanError};
+    use super::{checked_paid_total, next_scheduled_time, validate_transfer, PaymentPlan, PlanError};
 
     #[test]
     fn schedule_advances_to_first_time_after_now() {
@@ -204,7 +200,25 @@ mod tests {
     fn schedule_overflow_fails_without_wrapping() {
         assert_eq!(next_scheduled_time(i64::MAX, i64::MAX - 1, 1), None); // REQ-28
         assert_eq!(i64::MAX.checked_add(1), None); // REQ-19
-        assert_eq!(checked_total_limit(u64::MAX, 2), None); // REQ-19
+        assert_eq!(u64::MAX.checked_mul(2), None); // REQ-19
+    }
+
+    #[test]
+    fn rejects_update_schedule_overflow() {
+        let plan = PaymentPlan {
+            owner: Pubkey::default(),
+            plan_id: 0,
+            recipient: Pubkey::default(),
+            amount: 1,
+            interval: i64::MAX,
+            total_limit: 1,
+            paid_total: 0,
+            next_due_at: 100,
+            expiry: i64::MAX,
+            authorized_caller: Pubkey::default(),
+            bump: 0,
+        };
+        assert!(matches!(validate_transfer(&plan, 100), Err(PlanError::MathOverflow))); // REQ-28
     }
 
     #[test]

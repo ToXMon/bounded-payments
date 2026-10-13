@@ -204,6 +204,9 @@ describe("bounded-payments: Stage 1", () => {
     await fail([standard[0], standard[1], standard[2], standard[3], new anchor.BN(1), caller.publicKey]); // REQ-16
     await fail([standard[0], standard[1], standard[2], standard[3], null, PublicKey.default]); // REQ-18
     await fail([standard[0], new anchor.BN("18446744073709551615"), standard[2], standard[3], null, caller.publicKey]); // REQ-19
+    await fail([standard[0], new anchor.BN(1), new anchor.BN(1), new anchor.BN("18446744073709551615"), null, caller.publicKey]); // REQ-19
+    await fail([standard[0], new anchor.BN(1), new anchor.BN("9223372036854775807"), new anchor.BN(2), null, caller.publicKey]); // REQ-19
+    await fail([standard[0], new anchor.BN(1), new anchor.BN(1), new anchor.BN(1), new anchor.BN("9223372036854775807"), caller.publicKey]); // REQ-19
   });
 
   it("REQ-30: rejects duplicate plan seeds without changing the original", async () => {
