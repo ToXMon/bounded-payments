@@ -30,7 +30,7 @@ pub mod bounded_payments {
         let schedule_span = interval
             .checked_mul(i64::try_from(payment_count).map_err(|_| PlanError::MathOverflow)?)
             .ok_or(PlanError::MathOverflow)?;
-        let expiry = checked_add(next_due_at, schedule_span).ok_or(PlanError::MathOverflow)?;
+        let expiry = next_due_at.checked_add(schedule_span).ok_or(PlanError::MathOverflow)?;
 
         let plan = &mut ctx.accounts.plan;
         plan.owner = ctx.accounts.owner.key();
@@ -50,11 +50,7 @@ pub mod bounded_payments {
     pub fn execute_transfer(ctx: Context<ExecuteTransfer>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let plan = &ctx.accounts.plan;
-        require!(now >= plan.next_due_at, PlanError::TransferNotDue);
-        let paid_total = checked_paid_total(plan.paid_total, plan.amount, plan.total_limit)?;
-        require!(now <= plan.expiry, PlanError::PlanExpired);
-        let next_due_at = next_scheduled_time(now, plan.next_due_at, plan.interval)
-            .ok_or(PlanError::MathOverflow)?;
+        let (paid_total, next_due_at) = validate_transfer(plan, now)?;
 
         let owner = plan.owner;
         let plan_id = plan.plan_id.to_le_bytes();
@@ -162,8 +158,17 @@ pub struct PaymentPlan {
     pub bump: u8,
 }
 
-fn checked_add(left: i64, right: i64) -> Option<i64> {
-    left.checked_add(right)
+fn validate_transfer(plan: &PaymentPlan, now: i64) -> core::result::Result<(u64, i64), PlanError> {
+    if now < plan.next_due_at {
+        return Err(PlanError::TransferNotDue);
+    }
+    let paid_total = checked_paid_total(plan.paid_total, plan.amount, plan.total_limit)?;
+    if now > plan.expiry {
+        return Err(PlanError::PlanExpired);
+    }
+    let next_due_at = next_scheduled_time(now, plan.next_due_at, plan.interval)
+        .ok_or(PlanError::MathOverflow)?;
+    Ok((paid_total, next_due_at))
 }
 
 fn checked_total_limit(amount: u64, count: u64) -> Option<u64> {
@@ -186,7 +191,8 @@ fn next_scheduled_time(now: i64, due_at: i64, interval: i64) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{checked_add, checked_paid_total, checked_total_limit, next_scheduled_time, PlanError};
+    use anchor_lang::prelude::Pubkey;
+    use super::{checked_paid_total, checked_total_limit, next_scheduled_time, validate_transfer, PaymentPlan, PlanError};
 
     #[test]
     fn schedule_advances_to_first_time_after_now() {
@@ -197,13 +203,26 @@ mod tests {
     #[test]
     fn schedule_overflow_fails_without_wrapping() {
         assert_eq!(next_scheduled_time(i64::MAX, i64::MAX - 1, 1), None); // REQ-28
-        assert_eq!(checked_add(i64::MAX, 1), None); // REQ-19
+        assert_eq!(i64::MAX.checked_add(1), None); // REQ-19
         assert_eq!(checked_total_limit(u64::MAX, 2), None); // REQ-19
     }
 
     #[test]
-    fn rejects_payment_above_limit() {
-        assert!(matches!(checked_paid_total(20, 10, 29), Err(PlanError::LimitExceeded))); // REQ-23
+    fn rejects_due_payment_above_limit_at_expiry() {
+        let plan = PaymentPlan {
+            owner: Pubkey::default(),
+            plan_id: 0,
+            recipient: Pubkey::default(),
+            amount: 10,
+            interval: 10,
+            total_limit: 20,
+            paid_total: 20,
+            next_due_at: 100,
+            expiry: 130,
+            authorized_caller: Pubkey::default(),
+            bump: 0,
+        };
+        assert!(matches!(validate_transfer(&plan, 130), Err(PlanError::LimitExceeded))); // REQ-23
         assert!(matches!(checked_paid_total(u64::MAX, 1, u64::MAX), Err(PlanError::MathOverflow))); // REQ-28
     }
 }
