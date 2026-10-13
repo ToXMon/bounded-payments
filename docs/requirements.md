@@ -57,7 +57,7 @@ Handler: `execute_transfer`. Signer: the stored authorized caller.
 | REQ-25 | Transfer the stored amount from the vault to the stored recipient with `transfer_checked`, signed by the plan PDA. | Balances change by the amount. Vault short of funds fails with the Token Program error. |
 | REQ-26 | Add the transfer amount to the paid total. | Read plan. |
 | REQ-27 | Set `next_due_at` to the first scheduled time after `now`: `k = (now − next_due_at) / interval + 1`, integer division, then `next_due_at = next_due_at + k × interval`. | Due 100, interval 10, `now` 125 stores 130. `now` 100 exactly stores 110. |
-| REQ-28 | Reject any arithmetic overflow in the update. | Fails on checked math. |
+| REQ-28 | Reject any arithmetic overflow in the update. | Local validation boundary fails on checked math. |
 | REQ-29 | Preserve all balances and plan state when any check or transfer fails. | After each failure above, balances and plan are unchanged. |
 
 ## Required negative tests

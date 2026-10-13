@@ -40,7 +40,8 @@ Use case 2 depends on a complete and tested use case 1. The agent, passkey walle
 
 Stage 1 is implemented and deployed to devnet. The Anchor program has two
 handlers, `create_plan` and `execute_transfer`, and the repository includes a
-devnet test suite for REQ-01 to REQ-30. The devnet deployment is verified
+devnet suite for live flows plus deterministic Rust coverage for arithmetic
+boundaries. The devnet deployment is verified
 on-chain; the devnet test rerun and its screenshot are the captain's live run,
 not yet captured.
 
