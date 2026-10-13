@@ -5,6 +5,7 @@
 !app/package-lock.json
 !app/src/bounded_payments.json
 !package.json
+!package-lock.json
 !tsconfig.json
 !.devin/config.json
 node_modules/
