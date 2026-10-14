@@ -1,0 +1,402 @@
+{
+  "address": "Hcgo55q8sQZW1cw6UBBErqZEhCYGjph7PKmK26rvkp2Z",
+  "metadata": {
+    "name": "bounded_payments",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Bounded Payments Stage 1 program"
+  },
+  "instructions": [
+    {
+      "name": "create_plan",
+      "discriminator": [
+        77,
+        43,
+        141,
+        254,
+        212,
+        118,
+        41,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "plan",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "plan_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        },
+        {
+          "name": "recipient"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "plan"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "plan_id",
+          "type": "u64"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "interval",
+          "type": "i64"
+        },
+        {
+          "name": "payment_count",
+          "type": "u64"
+        },
+        {
+          "name": "first_due_at",
+          "type": {
+            "option": "i64"
+          }
+        },
+        {
+          "name": "authorized_caller",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "execute_transfer",
+      "discriminator": [
+        233,
+        126,
+        160,
+        184,
+        235,
+        206,
+        31,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "authorized_caller",
+          "signer": true
+        },
+        {
+          "name": "plan",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "plan.owner",
+                "account": "PaymentPlan"
+              },
+              {
+                "kind": "account",
+                "path": "plan.plan_id",
+                "account": "PaymentPlan"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "plan"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "PaymentPlan",
+      "discriminator": [
+        128,
+        22,
+        190,
+        86,
+        141,
+        153,
+        33,
+        233
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidInterval",
+      "msg": "Interval must be greater than zero"
+    },
+    {
+      "code": 6002,
+      "name": "ZeroPaymentCount",
+      "msg": "Payment count must be greater than zero"
+    },
+    {
+      "code": 6003,
+      "name": "FirstDueInPast",
+      "msg": "First due time is earlier than now"
+    },
+    {
+      "code": 6004,
+      "name": "WrongMint",
+      "msg": "Recipient token account has the wrong mint"
+    },
+    {
+      "code": 6005,
+      "name": "ZeroAuthorizedCaller",
+      "msg": "Authorized caller cannot be the zero key"
+    },
+    {
+      "code": 6006,
+      "name": "MathOverflow",
+      "msg": "Checked arithmetic overflow"
+    },
+    {
+      "code": 6007,
+      "name": "Unauthorized",
+      "msg": "Caller is not authorized"
+    },
+    {
+      "code": 6008,
+      "name": "TransferNotDue",
+      "msg": "Transfer is not due"
+    },
+    {
+      "code": 6009,
+      "name": "PlanExpired",
+      "msg": "Plan has expired"
+    },
+    {
+      "code": 6010,
+      "name": "LimitExceeded",
+      "msg": "Transfer exceeds the total limit"
+    }
+  ],
+  "types": [
+    {
+      "name": "PaymentPlan",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "plan_id",
+            "type": "u64"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "interval",
+            "type": "i64"
+          },
+          {
+            "name": "total_limit",
+            "type": "u64"
+          },
+          {
+            "name": "paid_total",
+            "type": "u64"
+          },
+          {
+            "name": "next_due_at",
+            "type": "i64"
+          },
+          {
+            "name": "expiry",
+            "type": "i64"
+          },
+          {
+            "name": "authorized_caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

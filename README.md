@@ -19,7 +19,7 @@ Use case 2 depends on a complete and tested use case 1. The agent, passkey walle
 
 ## Success criteria
 
-- The owner can define a recipient, amount, interval, total limit, and expiry.
+- The owner can define a recipient, amount, interval, and payment count; the program derives the total limit and expiry.
 - The owner can fund a vault without granting the caller control of the vault.
 - An authorized caller can execute a due transfer.
 - The program rejects an early, excessive, expired, or unauthorized transfer.
@@ -35,6 +35,22 @@ Use case 2 depends on a complete and tested use case 1. The agent, passkey walle
 - [Contribution workflow](CONTRIBUTING.md)
 - [Scope decision](docs/adr/0001-stage-the-poc-around-a-recurring-transfer.md)
 - [Two handlers, derived limits](docs/adr/0002-two-handlers-derived-limits.md)
+
+## Devnet demo
+
+The guided client lives in `app/`. Without a connected wallet, it stays read-only. It detects an already-connected Phantom wallet and can connect a pre-funded devnet wallet for signing.
+
+The demo displays the default devnet wallet and provides a copy action and Circle's devnet USDC faucet. Visitors can inspect the published plan without entering its address.
+
+With a connected wallet, the client can create a fixed plan, fund its vault with a plain SPL Token transfer, and execute a due transfer. The client can also read balances and plan state and run the REQ-20 and REQ-21 rejection checks. The published plan is read-only. The x402 envelope is a proposal only; it is not Stage 1 functionality.
+
+Run it locally:
+
+```sh
+cd app
+npm ci
+npm run dev
+```
 
 ## Project status
 
