@@ -126,6 +126,10 @@ screenshot has been fabricated for this submission.
 - Screenshot path: `docs/devnet-test-evidence.png`
 - Caption: `npm run test:devnet — 6 passing, 0 failing; create_plan, vault funding, and execute_transfer signatures on devnet`
 
+## Test Screenshot
+
+![screenshot](assets/capstone_tests.png)
+
 ## FigJam
 
 The team uses the [Bounded Payments FigJam board](https://www.figma.com/board/KwP7iyzbZcchf04sb6pWZx/dapp-diagrams--Copy-) for workshops and diagrams. The repository is the source of truth for approved requirements and decisions.
