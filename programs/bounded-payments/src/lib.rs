@@ -26,11 +26,11 @@ pub mod bounded_payments {
         require!(authorized_caller != Pubkey::default(), PlanError::ZeroAuthorizedCaller);
         let next_due_at = first_due_at.unwrap_or(now);
         require!(next_due_at >= now, PlanError::FirstDueInPast);
-        let total_limit = checked_total_limit(amount, payment_count).ok_or(PlanError::MathOverflow)?;
+        let total_limit = amount.checked_mul(payment_count).ok_or(PlanError::MathOverflow)?;
         let schedule_span = interval
             .checked_mul(i64::try_from(payment_count).map_err(|_| PlanError::MathOverflow)?)
             .ok_or(PlanError::MathOverflow)?;
-        let expiry = checked_add(next_due_at, schedule_span).ok_or(PlanError::MathOverflow)?;
+        let expiry = next_due_at.checked_add(schedule_span).ok_or(PlanError::MathOverflow)?;
 
         let plan = &mut ctx.accounts.plan;
         plan.owner = ctx.accounts.owner.key();
@@ -50,11 +50,7 @@ pub mod bounded_payments {
     pub fn execute_transfer(ctx: Context<ExecuteTransfer>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let plan = &ctx.accounts.plan;
-        require!(now >= plan.next_due_at, PlanError::TransferNotDue);
-        require!(now <= plan.expiry, PlanError::PlanExpired);
-        let paid_total = checked_paid_total(plan.paid_total, plan.amount, plan.total_limit)?;
-        let next_due_at = next_scheduled_time(now, plan.next_due_at, plan.interval)
-            .ok_or(PlanError::MathOverflow)?;
+        let (paid_total, next_due_at) = validate_transfer(plan, now)?;
 
         let owner = plan.owner;
         let plan_id = plan.plan_id.to_le_bytes();
@@ -98,6 +94,7 @@ pub struct CreatePlan<'info> {
     #[account(address = USDC_DEVNET)]
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(
+        owner = token_program.key() @ PlanError::WrongTokenProgram,
         constraint = recipient.mint == mint.key() @ PlanError::WrongMint
     )]
     pub recipient: InterfaceAccount<'info, TokenAccount>,
@@ -137,6 +134,7 @@ pub struct ExecuteTransfer<'info> {
     #[account(
         mut,
         address = plan.recipient,
+        owner = token_program.key() @ PlanError::WrongTokenProgram,
         constraint = recipient.mint == mint.key() @ PlanError::WrongMint
     )]
     pub recipient: InterfaceAccount<'info, TokenAccount>,
@@ -160,12 +158,17 @@ pub struct PaymentPlan {
     pub bump: u8,
 }
 
-fn checked_add(left: i64, right: i64) -> Option<i64> {
-    left.checked_add(right)
-}
-
-fn checked_total_limit(amount: u64, count: u64) -> Option<u64> {
-    amount.checked_mul(count)
+fn validate_transfer(plan: &PaymentPlan, now: i64) -> core::result::Result<(u64, i64), PlanError> {
+    if now < plan.next_due_at {
+        return Err(PlanError::TransferNotDue);
+    }
+    let paid_total = checked_paid_total(plan.paid_total, plan.amount, plan.total_limit)?;
+    if now > plan.expiry {
+        return Err(PlanError::PlanExpired);
+    }
+    let next_due_at = next_scheduled_time(now, plan.next_due_at, plan.interval)
+        .ok_or(PlanError::MathOverflow)?;
+    Ok((paid_total, next_due_at))
 }
 
 fn checked_paid_total(paid: u64, amount: u64, limit: u64) -> core::result::Result<u64, PlanError> {
@@ -184,7 +187,8 @@ fn next_scheduled_time(now: i64, due_at: i64, interval: i64) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{checked_add, checked_paid_total, checked_total_limit, next_scheduled_time, PlanError};
+    use anchor_lang::prelude::Pubkey;
+    use super::{checked_paid_total, next_scheduled_time, validate_transfer, PaymentPlan, PlanError};
 
     #[test]
     fn schedule_advances_to_first_time_after_now() {
@@ -195,13 +199,44 @@ mod tests {
     #[test]
     fn schedule_overflow_fails_without_wrapping() {
         assert_eq!(next_scheduled_time(i64::MAX, i64::MAX - 1, 1), None); // REQ-28
-        assert_eq!(checked_add(i64::MAX, 1), None); // REQ-19
-        assert_eq!(checked_total_limit(u64::MAX, 2), None); // REQ-19
+        assert_eq!(i64::MAX.checked_add(1), None); // REQ-19
+        assert_eq!(u64::MAX.checked_mul(2), None); // REQ-19
     }
 
     #[test]
-    fn rejects_payment_above_limit() {
-        assert!(matches!(checked_paid_total(20, 10, 29), Err(PlanError::LimitExceeded))); // REQ-23
+    fn rejects_update_schedule_overflow() {
+        let plan = PaymentPlan {
+            owner: Pubkey::default(),
+            plan_id: 0,
+            recipient: Pubkey::default(),
+            amount: 1,
+            interval: i64::MAX,
+            total_limit: 1,
+            paid_total: 0,
+            next_due_at: 100,
+            expiry: i64::MAX,
+            authorized_caller: Pubkey::default(),
+            bump: 0,
+        };
+        assert!(matches!(validate_transfer(&plan, 100), Err(PlanError::MathOverflow))); // REQ-28
+    }
+
+    #[test]
+    fn rejects_due_payment_above_limit_at_expiry() {
+        let plan = PaymentPlan {
+            owner: Pubkey::default(),
+            plan_id: 0,
+            recipient: Pubkey::default(),
+            amount: 10,
+            interval: 10,
+            total_limit: 20,
+            paid_total: 20,
+            next_due_at: 100,
+            expiry: 130,
+            authorized_caller: Pubkey::default(),
+            bump: 0,
+        };
+        assert!(matches!(validate_transfer(&plan, 130), Err(PlanError::LimitExceeded))); // REQ-23
         assert!(matches!(checked_paid_total(u64::MAX, 1, u64::MAX), Err(PlanError::MathOverflow))); // REQ-28
     }
 }
@@ -218,6 +253,8 @@ pub enum PlanError {
     FirstDueInPast,
     #[msg("Recipient token account has the wrong mint")]
     WrongMint,
+    #[msg("Recipient token account has the wrong token program")]
+    WrongTokenProgram,
     #[msg("Authorized caller cannot be the zero key")]
     ZeroAuthorizedCaller,
     #[msg("Checked arithmetic overflow")]

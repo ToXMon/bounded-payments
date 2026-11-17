@@ -21,8 +21,13 @@ describe("bounded-payments: Stage 1", () => {
     program.programId,
   )[0];
 
-  async function rejects(promise: Promise<unknown>) {
-    try { await promise; } catch { return; }
+  async function rejects(promise: Promise<unknown>, expectedCode?: string) {
+    try {
+      await promise;
+    } catch (error: any) {
+      if (expectedCode !== undefined) expect(error?.error?.errorCode?.code).to.equal(expectedCode);
+      return;
+    }
     throw new Error("expected transaction to fail");
   }
 
@@ -58,7 +63,40 @@ describe("bounded-payments: Stage 1", () => {
     throw new Error(`plan ${id} did not reach paid_total ${expected}`);
   }
 
-  async function create(overrides: Record<string, unknown> = {}, id = nextId++) {
+  async function chainTime() {
+    const slot = await provider.connection.getSlot("confirmed");
+    const time = await provider.connection.getBlockTime(slot);
+    if (time === null) throw new Error("latest confirmed block has no timestamp");
+    return time;
+  }
+
+  async function waitForDue(id: number) {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const plan = await fetchPlan(id);
+      if (await chainTime() >= plan.nextDueAt.toNumber()) return plan;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error(`plan ${id} did not become due`);
+  }
+
+  async function waitForExpiry(id: number) {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const plan = await fetchPlan(id);
+      if (await chainTime() > plan.expiry.toNumber()) return plan;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error(`plan ${id} did not expire`);
+  }
+
+  async function fundVault(vault: PublicKey, amount: bigint) {
+    const source = getAssociatedTokenAddressSync(USDC, owner.publicKey);
+    await provider.sendAndConfirm(new anchor.web3.Transaction().add(
+      createTransferCheckedInstruction(source, USDC, vault, owner.publicKey, amount, 6, [], TOKEN_PROGRAM_ID),
+    ));
+    await waitForTokenAccount(vault, amount);
+  }
+
+  async function create(id = nextId++) {
     return program.methods.createPlan(
       new anchor.BN(id), new anchor.BN(10), new anchor.BN(60), new anchor.BN(3), null, caller.publicKey,
     ).accounts({
@@ -70,7 +108,6 @@ describe("bounded-payments: Stage 1", () => {
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
-      ...overrides,
     }).rpc();
   }
 
@@ -85,7 +122,7 @@ describe("bounded-payments: Stage 1", () => {
 
   it("REQ-01..12 and REQ-25..27: funds the vault and executes a transfer", async () => {
     const id = nextId++;
-    const createSignature = await create({}, id);
+    const createSignature = await create(id);
     console.log(`create_plan signature: ${createSignature}`);
     const plan = await fetchPlan(id);
     expect(plan.owner.equals(owner.publicKey)).to.equal(true);
@@ -167,15 +204,52 @@ describe("bounded-payments: Stage 1", () => {
     await fail([standard[0], standard[1], standard[2], standard[3], new anchor.BN(1), caller.publicKey]); // REQ-16
     await fail([standard[0], standard[1], standard[2], standard[3], null, PublicKey.default]); // REQ-18
     await fail([standard[0], new anchor.BN("18446744073709551615"), standard[2], standard[3], null, caller.publicKey]); // REQ-19
+    await fail([standard[0], new anchor.BN(1), new anchor.BN(1), new anchor.BN("18446744073709551615"), null, caller.publicKey]); // REQ-19
+    await fail([standard[0], new anchor.BN(1), new anchor.BN("9223372036854775807"), new anchor.BN(2), null, caller.publicKey]); // REQ-19
+    await fail([standard[0], new anchor.BN(1), new anchor.BN(1), new anchor.BN(1), new anchor.BN("9223372036854775807"), caller.publicKey]); // REQ-19
   });
 
   it("REQ-30: rejects duplicate plan seeds without changing the original", async () => {
     const id = nextId++;
-    await create({}, id);
+    await create(id);
     const before = await fetchPlan(id);
-    await rejects(create({}, id));
+    await rejects(create(id));
     const after = await fetchPlan(id);
     expect(after.amount.eq(before.amount)).to.equal(true);
+  });
+
+  it("REQ-23 and REQ-29: rejects a due transfer after the final allowed payment", async function () {
+    this.timeout(60000);
+    const id = nextId++;
+    await program.methods.createPlan(new anchor.BN(id), new anchor.BN(10), new anchor.BN(20), new anchor.BN(2), null, caller.publicKey)
+      .accounts({ owner: owner.publicKey, plan: planAddress(id), mint: USDC, recipient,
+        vault: getAssociatedTokenAddressSync(USDC, planAddress(id), true), tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID, systemProgram: SystemProgram.programId }).rpc();
+    const vault = getAssociatedTokenAddressSync(USDC, planAddress(id), true);
+    const source = getAssociatedTokenAddressSync(USDC, owner.publicKey);
+    const sourceBefore = await getAccount(provider.connection, source);
+    await provider.sendAndConfirm(new anchor.web3.Transaction().add(
+      createTransferCheckedInstruction(source, USDC, vault, owner.publicKey, 30n, 6, [], TOKEN_PROGRAM_ID),
+    ));
+    await waitForTokenAccount(vault, 30n);
+    const execute = () => program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey,
+      plan: planAddress(id), mint: USDC, vault, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc();
+    await waitForDue(id);
+    await execute();
+    await waitForDue(id);
+    await execute();
+
+    const planBefore = await fetchPlan(id);
+    const vaultBefore = await getAccount(provider.connection, vault);
+    const recipientBefore = await getAccount(provider.connection, recipient);
+    await waitForDue(id);
+    await rejects(execute());
+    const planAfter = await fetchPlan(id);
+    expect(planAfter.paidTotal.eq(planBefore.paidTotal)).to.equal(true);
+    expect(planAfter.nextDueAt.eq(planBefore.nextDueAt)).to.equal(true);
+    expect((await getAccount(provider.connection, vault)).amount).to.equal(vaultBefore.amount);
+    expect((await getAccount(provider.connection, recipient)).amount).to.equal(recipientBefore.amount);
+    expect((await getAccount(provider.connection, source)).amount).to.equal(sourceBefore.amount - 30n);
   });
 
   it("REQ-22: rejects a transfer after expiry", async () => {
@@ -184,41 +258,68 @@ describe("bounded-payments: Stage 1", () => {
       .accounts({ owner: owner.publicKey, plan: planAddress(id), mint: USDC, recipient,
         vault: getAssociatedTokenAddressSync(USDC, planAddress(id), true), tokenProgram: TOKEN_PROGRAM_ID,
         associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID, systemProgram: SystemProgram.programId }).rpc();
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    const vault = getAssociatedTokenAddressSync(USDC, planAddress(id), true);
+    await fundVault(vault, 10n);
+    const before = await fetchPlan(id);
+    const recipientBefore = await getAccount(provider.connection, recipient);
+    await waitForExpiry(id);
     await rejects(program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey, plan: planAddress(id), mint: USDC,
-      vault: getAssociatedTokenAddressSync(USDC, planAddress(id), true), recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc());
+      vault, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc(), "PlanExpired");
+    const after = await fetchPlan(id);
+    expect(after.paidTotal.eq(before.paidTotal)).to.equal(true);
+    expect(after.nextDueAt.eq(before.nextDueAt)).to.equal(true);
+    expect((await getAccount(provider.connection, recipient)).amount).to.equal(recipientBefore.amount);
   });
 
-  it("REQ-20, REQ-21, REQ-25, REQ-29: rejects unauthorized, early, and unfunded transfers atomically", async () => {
-    const id = nextId++;
-    const future = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
-    await program.methods.createPlan(new anchor.BN(id), new anchor.BN(10), new anchor.BN(60), new anchor.BN(3), future, caller.publicKey)
-      .accounts({ owner: owner.publicKey, plan: planAddress(id), mint: USDC, recipient,
-        vault: getAssociatedTokenAddressSync(USDC, planAddress(id), true), tokenProgram: TOKEN_PROGRAM_ID,
+  it("REQ-20, REQ-21, REQ-24, REQ-25, REQ-29: rejects invalid transfers atomically", async () => {
+    const dueId = nextId++;
+    await program.methods.createPlan(new anchor.BN(dueId), new anchor.BN(10), new anchor.BN(60), new anchor.BN(3), null, caller.publicKey)
+      .accounts({ owner: owner.publicKey, plan: planAddress(dueId), mint: USDC, recipient,
+        vault: getAssociatedTokenAddressSync(USDC, planAddress(dueId), true), tokenProgram: TOKEN_PROGRAM_ID,
         associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID, systemProgram: SystemProgram.programId }).rpc();
-    const before = await fetchPlan(id);
-    const accounts = { plan: planAddress(id), mint: USDC,
-      vault: getAssociatedTokenAddressSync(USDC, planAddress(id), true), recipient, tokenProgram: TOKEN_PROGRAM_ID };
-    await rejects(program.methods.executeTransfer().accounts({ ...accounts, authorizedCaller: owner.publicKey }).rpc()); // REQ-20
-    await rejects(program.methods.executeTransfer().accounts({ ...accounts, authorizedCaller: caller.publicKey }).signers([caller]).rpc()); // REQ-21
+    const dueVault = getAssociatedTokenAddressSync(USDC, planAddress(dueId), true);
+    await fundVault(dueVault, 10n);
+    const dueAccounts = { plan: planAddress(dueId), mint: USDC, vault: dueVault, recipient, tokenProgram: TOKEN_PROGRAM_ID };
+    const dueBefore = await fetchPlan(dueId);
+    const dueVaultBefore = await getAccount(provider.connection, dueVault);
+    const dueRecipientBefore = await getAccount(provider.connection, recipient);
+    await rejects(program.methods.executeTransfer().accounts({ ...dueAccounts, authorizedCaller: owner.publicKey }).rpc(), "Unauthorized");
+
     const alternateOwner = anchor.web3.Keypair.generate();
     const alternateRecipient = getAssociatedTokenAddressSync(USDC, alternateOwner.publicKey);
     await provider.sendAndConfirm(new anchor.web3.Transaction().add(
       createAssociatedTokenAccountInstruction(owner.publicKey, alternateRecipient, alternateOwner.publicKey, USDC),
     ));
-    // REQ-24 is enforced by the stored-recipient address constraint.
-    await rejects(program.methods.executeTransfer().accounts({ ...accounts, recipient: alternateRecipient, authorizedCaller: caller.publicKey }).signers([caller]).rpc());
-    const after = await fetchPlan(id);
-    expect(after.paidTotal.eq(before.paidTotal)).to.equal(true);
-    expect(after.nextDueAt.eq(before.nextDueAt)).to.equal(true);
+    await rejects(program.methods.executeTransfer().accounts({ ...dueAccounts, recipient: alternateRecipient, authorizedCaller: caller.publicKey }).signers([caller]).rpc(), "ConstraintAddress");
+    const dueAfter = await fetchPlan(dueId);
+    expect(dueAfter.paidTotal.eq(dueBefore.paidTotal)).to.equal(true);
+    expect(dueAfter.nextDueAt.eq(dueBefore.nextDueAt)).to.equal(true);
+    expect((await getAccount(provider.connection, dueVault)).amount).to.equal(dueVaultBefore.amount);
+    expect((await getAccount(provider.connection, recipient)).amount).to.equal(dueRecipientBefore.amount);
+
+    const earlyId = nextId++;
+    const future = new anchor.BN(await chainTime() + 3600);
+    await program.methods.createPlan(new anchor.BN(earlyId), new anchor.BN(10), new anchor.BN(60), new anchor.BN(3), future, caller.publicKey)
+      .accounts({ owner: owner.publicKey, plan: planAddress(earlyId), mint: USDC, recipient,
+        vault: getAssociatedTokenAddressSync(USDC, planAddress(earlyId), true), tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID, systemProgram: SystemProgram.programId }).rpc();
+    const earlyVault = getAssociatedTokenAddressSync(USDC, planAddress(earlyId), true);
+    await fundVault(earlyVault, 10n);
+    const earlyBefore = await fetchPlan(earlyId);
+    await rejects(program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey, plan: planAddress(earlyId),
+      mint: USDC, vault: earlyVault, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc(), "TransferNotDue");
+    const earlyAfter = await fetchPlan(earlyId);
+    expect(earlyAfter.paidTotal.eq(earlyBefore.paidTotal)).to.equal(true);
+    expect(earlyAfter.nextDueAt.eq(earlyBefore.nextDueAt)).to.equal(true);
+    expect((await getAccount(provider.connection, earlyVault)).amount).to.equal(10n);
 
     const unfundedId = nextId++;
-    await create({}, unfundedId);
+    await create(unfundedId);
     const unfundedBefore = await fetchPlan(unfundedId);
     const recipientBefore = await getAccount(provider.connection, recipient);
-    const vault = getAssociatedTokenAddressSync(USDC, planAddress(unfundedId), true);
+    const unfundedVault = getAssociatedTokenAddressSync(USDC, planAddress(unfundedId), true);
     await rejects(program.methods.executeTransfer().accounts({ authorizedCaller: caller.publicKey, plan: planAddress(unfundedId),
-      mint: USDC, vault, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc()); // REQ-25
+      mint: USDC, vault: unfundedVault, recipient, tokenProgram: TOKEN_PROGRAM_ID }).signers([caller]).rpc()); // REQ-25
     const unfundedAfter = await fetchPlan(unfundedId);
     expect(unfundedAfter.paidTotal.eq(unfundedBefore.paidTotal)).to.equal(true); // REQ-29
     expect(unfundedAfter.nextDueAt.eq(unfundedBefore.nextDueAt)).to.equal(true);
